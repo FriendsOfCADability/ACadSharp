@@ -42,6 +42,20 @@ internal partial class CadTableEntityTemplate
 			{
 				contentTemplate.Build(builder);
 			}
+
+			if (this.FormatTextHeight.HasValue)
+			{
+				// The classic ACAD_TABLE entity stores the cell text height as DXF code 140
+				// inside the cell data; expose it through the content format so consumers
+				// find it in the same place as for TABLECONTENT based tables.
+				foreach (var content in this.Cell.Contents)
+				{
+					if (content.Format.TextHeight <= 0)
+					{
+						content.Format.TextHeight = this.FormatTextHeight.Value;
+					}
+				}
+			}
 		}
 	}
 }
