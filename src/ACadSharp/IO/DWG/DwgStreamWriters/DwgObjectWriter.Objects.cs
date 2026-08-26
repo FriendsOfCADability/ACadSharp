@@ -19,7 +19,7 @@ internal partial class DwgObjectWriter : DwgSectionIO
 	{
 		foreach (NonGraphicalObject e in entries)
 		{
-			this._objects.Enqueue(e);
+			this.enqueueValidObject(e);
 		}
 	}
 
@@ -30,6 +30,13 @@ internal partial class DwgObjectWriter : DwgSectionIO
 
 	private bool skipEntry(NonGraphicalObject entry, out bool notify)
 	{
+		if (!entry.IsValid(CadFileFormat.DWG, this._version))
+		{
+			notify = false;
+			this.notify($"Invalid object {entry.GetType().FullName} with handle {entry.Handle}", NotificationType.Warning);
+			return false;
+		}
+
 		notify = true;
 		switch (entry)
 		{
@@ -46,8 +53,6 @@ internal partial class DwgObjectWriter : DwgSectionIO
 			case UnknownNonGraphicalObject:
 			case VisualStyle:
 			case ProxyObject:
-			case BlockReferenceObjectContextData:
-			case MTextAttributeObjectContextData:
 				return true;
 		}
 
@@ -71,6 +76,8 @@ internal partial class DwgObjectWriter : DwgSectionIO
 
 	private void writeAnnotScaleObjectContextData(AnnotScaleObjectContextData annotScaleObjectContextData)
 	{
+		this.writeObjectContextData(annotScaleObjectContextData);
+
 		this._writer.HandleReference(DwgReferenceType.HardPointer, annotScaleObjectContextData.Scale);
 	}
 
@@ -389,6 +396,17 @@ internal partial class DwgObjectWriter : DwgSectionIO
 
 		//unknown
 		this._writer.WriteBitLong(0);
+	}
+
+	private void writeBlockReferenceObjectContextData(BlockReferenceObjectContextData contextData)
+	{
+		this.writeAnnotScaleObjectContextData(contextData);
+
+		this._writer.WriteBitDouble(contextData.Rotation);
+		this._writer.Write3BitDouble(contextData.InsertionPoint);
+		this._writer.WriteBitDouble(contextData.XScale);
+		this._writer.WriteBitDouble(contextData.YScale);
+		this._writer.WriteBitDouble(contextData.ZScale);
 	}
 
 	private void writeBlockRepresentationData(BlockRepresentationData representation)
@@ -1105,7 +1123,7 @@ internal partial class DwgObjectWriter : DwgSectionIO
 
 		foreach (Field c in field.Children)
 		{
-			this._objects.Enqueue(c);
+			this.enqueueValidObject(c);
 		}
 	}
 
@@ -1589,9 +1607,16 @@ internal partial class DwgObjectWriter : DwgSectionIO
 		}
 	}
 
+	private void writeMTextAttributeObjectContextData(MTextAttributeObjectContextData mtextContextData)
+	{
+		throw new NotImplementedException();
+	}
+
 	private void writeMultiLeaderAnnotContext(MultiLeaderObjectContextData multiLeaderAnnotContext)
 	{
-		writeMultiLeaderAnnotContextSubObject(false, multiLeaderAnnotContext);
+		this.writeAnnotScaleObjectContextData(multiLeaderAnnotContext);
+
+		this.writeMultiLeaderAnnotContextSubObject(false, multiLeaderAnnotContext);
 	}
 
 	private void writeMultiLeaderStyle(MultiLeaderStyle mLeaderStyle)
@@ -1814,6 +1839,9 @@ internal partial class DwgObjectWriter : DwgSectionIO
 			case BookColor bookColor:
 				this.writeBookColor(bookColor);
 				break;
+			case BlockReferenceObjectContextData blockContextData:
+				this.writeBlockReferenceObjectContextData(blockContextData);
+				break;
 			case CadDictionaryWithDefault dictionarydef:
 				this.writeCadDictionaryWithDefault(dictionarydef);
 				break;
@@ -1857,8 +1885,6 @@ internal partial class DwgObjectWriter : DwgSectionIO
 				this.writeMultiLeaderStyle(multiLeaderStyle);
 				break;
 			case MultiLeaderObjectContextData multiLeaderObjectContextData:
-				this.writeObjectContextData(multiLeaderObjectContextData);
-				this.writeAnnotScaleObjectContextData(multiLeaderObjectContextData);
 				this.writeMultiLeaderAnnotContext(multiLeaderObjectContextData);
 				break;
 			case PdfUnderlayDefinition pdfDefinition:
@@ -1881,6 +1907,12 @@ internal partial class DwgObjectWriter : DwgSectionIO
 				break;
 			case TableStyle tableStyle:
 				this.writeTableStyle(tableStyle);
+				break;
+			case MTextAttributeObjectContextData mtextContextData:
+				this.writeMTextAttributeObjectContextData(mtextContextData);
+				break;
+			case WipeoutVariables wipeoutVariables:
+				this.writeWipeoutVariables(wipeoutVariables);
 				break;
 			case Field field:
 				this.writeField(field);
@@ -2325,6 +2357,13 @@ internal partial class DwgObjectWriter : DwgSectionIO
 				index++;
 			}
 		}
+	}
+
+	private void writeWipeoutVariables(WipeoutVariables wipeoutVariables)
+	{
+		//Common:
+		//Dispfrm BS 70 display image frame
+		this._writer.WriteBitShort(wipeoutVariables.DisplayImageFrame ? (short)1 : (short)0);
 	}
 
 	private void writeXRecord(XRecord xrecord)

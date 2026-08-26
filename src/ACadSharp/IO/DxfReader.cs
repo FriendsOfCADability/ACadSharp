@@ -363,7 +363,7 @@ namespace ACadSharp.IO
 						dxfClass.ClassNumber = (short)(500 + classes.Count);
 					}
 
-					classes.AddOrUpdate(dxfClass);
+					classes.TryAdd(dxfClass);
 				}
 				else
 					this._reader.ReadNext();
