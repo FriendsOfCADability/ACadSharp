@@ -209,14 +209,7 @@ internal class DxfTablesSectionReader : DxfSectionReaderBase
 					template = this.readTableEntry(new CadTableEntryTemplate<AppId>(new AppId()), this.readAppId);
 					break;
 				case DxfFileToken.TableBlockRecord:
-					CadBlockRecordTemplate block = new CadBlockRecordTemplate();
-					template = this.readTableEntry(block, this.readBlockRecord);
-
-					if (block.CadObject.Name.Equals(BlockRecord.ModelSpaceName, StringComparison.OrdinalIgnoreCase))
-					{
-						this._builder.ModelSpaceTemplate = block;
-					}
-
+					template = this.readTableEntry(new CadBlockRecordTemplate(), this.readBlockRecord);
 					break;
 				case DxfFileToken.TableDimstyle:
 					template = this.readTableEntry(new CadDimensionStyleTemplate(), this.readDimensionStyle);
@@ -245,20 +238,51 @@ internal class DxfTablesSectionReader : DxfSectionReaderBase
 			}
 
 
-			if (tableTemplate.CadObject.Contains(template.Name) && this._builder.Configuration.Failsafe)
+			if (!this.tryAddEntry(tableTemplate, template))
 			{
-				this._builder.Notify($"Duplicated entry with name {template.Name} found in {template.CadObject.ObjectName}", NotificationType.Warning);
-
-				tableTemplate.CadObject.Remove(template.Name);
-				tableTemplate.CadObject.Add((T)template.CadObject);
+				continue;
 			}
-			else
+
+			if (template is CadBlockRecordTemplate block
+				&& block.CadObject.Name.Equals(BlockRecord.ModelSpaceName, StringComparison.OrdinalIgnoreCase))
 			{
-				tableTemplate.CadObject.Add((T)template.CadObject);
+				this._builder.ModelSpaceTemplate = block;
 			}
 
 			//Add the object and the template to the builder
 			this._builder.AddTemplate(template);
+		}
+	}
+
+	/// <summary>
+	/// Adds an entry to its table, a duplicated entry is discarded because a table cannot hold
+	/// two entries with the same name.
+	/// </summary>
+	/// <remarks>
+	/// The table decides how to store the entry, tables like the <see cref="VPortsTable"/> accept
+	/// entries with a duplicated name, the ones that do not, keep the entry that was read first.
+	/// </remarks>
+	/// <returns>true if the entry has been added to the table.</returns>
+	private bool tryAddEntry<T>(CadTableTemplate<T> tableTemplate, ICadTableEntryTemplate template)
+		where T : TableEntry
+	{
+		try
+		{
+			tableTemplate.CadObject.Add((T)template.CadObject);
+			return true;
+		}
+		catch (ArgumentException ex)
+		{
+			//The existing entry cannot be replaced, the default ones like the layer '0' are not removable
+			string message = $"Duplicated entry with name {template.Name} found in {tableTemplate.CadObject.ObjectName}";
+
+			if (!this._builder.Configuration.Failsafe)
+			{
+				throw new DxfException(message, this._reader.Position);
+			}
+
+			this._builder.Notify($"{message}, the entry has been ignored", NotificationType.Warning, ex);
+			return false;
 		}
 	}
 
