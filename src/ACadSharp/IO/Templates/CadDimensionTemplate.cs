@@ -24,7 +24,7 @@ internal class CadDimensionTemplate : CadEntityTemplate
 
 		Dimension dimension = this.CadObject as Dimension;
 
-		if (this.getTableReference(builder, this.StyleHandle, this.StyleName, out DimensionStyle style))
+		if (this.getTableReference(builder, this.StyleHandle, this.StyleName, out DimensionStyle style, createMissing: true))
 		{
 			dimension.Style = style;
 		}

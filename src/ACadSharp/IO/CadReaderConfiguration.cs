@@ -6,6 +6,17 @@
 	public abstract class CadReaderConfiguration
 	{
 		/// <summary>
+		/// The reader will create the table entries that the file references but does not define
+		/// </summary>
+		/// <remarks>
+		/// Entities reference layers, line types, text styles and dimension styles by name, a file
+		/// may use a name that is missing in its tables. The entry is created with the default
+		/// values, like AutoCad does, and the anomaly is reported. When this option is disabled the
+		/// reference is reported and the entity keeps the default entry.
+		/// </remarks>
+		public bool CreateMissingTableEntries { get; set; } = true;
+
+		/// <summary>
 		/// The reader will try to continue when an exception is thrown
 		/// </summary>
 		/// <remarks>

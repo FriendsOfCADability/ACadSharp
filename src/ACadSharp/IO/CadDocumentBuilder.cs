@@ -19,6 +19,8 @@ internal abstract class CadDocumentBuilder
 
 	public BlockRecordsTable BlockRecords { get; set; } = new BlockRecordsTable();
 
+	public abstract bool CreateMissingTableEntries { get; }
+
 	public DimensionStylesTable DimensionStyles { get; set; } = new DimensionStylesTable();
 
 	public CadDocument DocumentToBuild { get; }
@@ -223,17 +225,65 @@ internal abstract class CadDocumentBuilder
 		return false;
 	}
 
+	/// <summary>
+	/// Creates a table entry that the file references but does not define, the entry is added to
+	/// its table with the default values.
+	/// </summary>
+	/// <remarks>
+	/// A missing <see cref="BlockRecord"/> is never created, the geometry of the block is not in
+	/// the file and an empty definition would only hide the problem.
+	/// </remarks>
+	/// <returns>true if the entry has been created and added to its table.</returns>
+	public bool TryCreateMissingTableEntry<T>(string name, out T entry)
+		where T : TableEntry
+	{
+		entry = null;
+
+		if (!this.CreateMissingTableEntries
+			|| string.IsNullOrEmpty(name)
+			|| !isCreatableEntry<T>()
+			|| !this.tryGetTable(out Table<T> table))
+		{
+			return false;
+		}
+
+		entry = (T)Activator.CreateInstance(typeof(T), new object[] { name });
+		table.Add(entry);
+
+		this.Notify($"{typeof(T).Name} with name {name} is referenced but not defined in the file, the entry has been created", NotificationType.Warning);
+
+		return true;
+	}
+
 	public bool TryGetTableEntry<T>(string name, out T entry)
 		where T : TableEntry
 	{
 		//Only to be used when the tables are build
-		if (string.IsNullOrEmpty(name))
+		if (string.IsNullOrEmpty(name) || !this.tryGetTable(out Table<T> table))
 		{
 			entry = null;
 			return false;
 		}
 
-		Table<T> table = null;
+		return table.TryGetValue(name, out entry);
+	}
+
+	/// <summary>
+	/// Entries that can be recreated from their name alone, with the default values.
+	/// </summary>
+	private static bool isCreatableEntry<T>()
+		where T : TableEntry
+	{
+		return typeof(T) == typeof(Layer)
+			|| typeof(T) == typeof(LineType)
+			|| typeof(T) == typeof(TextStyle)
+			|| typeof(T) == typeof(DimensionStyle);
+	}
+
+	private bool tryGetTable<T>(out Table<T> table)
+		where T : TableEntry
+	{
+		table = null;
 		if (typeof(T) == typeof(AppId))
 		{
 			table = this.AppIds as Table<T>;
@@ -271,13 +321,7 @@ internal abstract class CadDocumentBuilder
 			table = this.BlockRecords as Table<T>;
 		}
 
-		if (table == null)
-		{
-			entry = null;
-			return false;
-		}
-
-		return table.TryGetValue(name, out entry);
+		return table != null;
 	}
 
 	protected void buildDictionaries()

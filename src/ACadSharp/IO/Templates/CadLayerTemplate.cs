@@ -39,7 +39,7 @@ namespace ACadSharp.IO.Templates
 				// builder.Notify($"Linetype with handle {this.LineTypeHandle} could not be found for layer {this.CadObject.Name}", NotificationType.Warning);
 			}
 
-			if (this.getTableReference(builder, LineTypeHandle, LineTypeName, out LineType lineType))
+			if (this.getTableReference(builder, LineTypeHandle, LineTypeName, out LineType lineType, createMissing: true))
 			{
 				this.CadObject.LineType = lineType;
 			}

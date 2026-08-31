@@ -146,10 +146,19 @@ internal abstract class CadTemplate : ICadObjectTemplate
 		}
 	}
 
-	protected bool getTableReference<T>(CadDocumentBuilder builder, ulong? handle, string name, out T reference)
+	/// <param name="createMissing">
+	/// Set it only when <paramref name="name"/> holds a table key, so a name that the file is
+	/// expected to define in the table. Names that are not a key, like the shape of a
+	/// <see cref="Entities.Shape"/>, must not create an entry when the lookup fails.
+	/// </param>
+	protected bool getTableReference<T>(CadDocumentBuilder builder, ulong? handle, string name, out T reference, bool createMissing = false)
 		where T : TableEntry
 	{
 		if (builder.TryGetCadObject<T>(handle, out reference) || builder.TryGetTableEntry<T>(name, out reference))
+		{
+			return true;
+		}
+		else if (createMissing && builder.TryCreateMissingTableEntry(name, out reference))
 		{
 			return true;
 		}

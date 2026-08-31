@@ -17,7 +17,7 @@ namespace ACadSharp.IO.Templates
 
 			IText text = (IText)this.CadObject;
 
-			if (this.getTableReference(builder, this.StyleHandle, this.StyleName, out TextStyle style))
+			if (this.getTableReference(builder, this.StyleHandle, this.StyleName, out TextStyle style, createMissing: true))
 			{
 				text.Style = style;
 			}

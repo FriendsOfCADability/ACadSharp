@@ -23,6 +23,8 @@ internal class DwgDocumentBuilder : CadDocumentBuilder
 
 	public List<Entity> ModelSpaceEntities { get; } = new();
 
+	public override bool CreateMissingTableEntries => this.Configuration.CreateMissingTableEntries;
+
 	public override bool KeepUnknownEntities => this.Configuration.KeepUnknownEntities;
 
 	public override bool KeepUnknownNonGraphicalObjects => this.Configuration.KeepUnknownNonGraphicalObjects;

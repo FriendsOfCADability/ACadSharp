@@ -18,6 +18,8 @@ internal class DxfDocumentBuilder : CadDocumentBuilder
 
 	public DxfReaderConfiguration Configuration { get; }
 
+	public override bool CreateMissingTableEntries => this.Configuration.CreateMissingTableEntries;
+
 	public override bool IgnoreProxyGraphics => true;
 
 	public override bool KeepUnknownEntities => this.Configuration.KeepUnknownEntities;

@@ -67,7 +67,7 @@ internal class CadEntityTemplate : CadTemplate<Entity>
 	{
 		base.build(builder);
 
-		if (this.getTableReference(builder, this.LayerHandle, this.LayerName, out Layer layer))
+		if (this.getTableReference(builder, this.LayerHandle, this.LayerName, out Layer layer, createMissing: true))
 		{
 			this.CadObject.Layer = layer;
 		}
@@ -88,7 +88,7 @@ internal class CadEntityTemplate : CadTemplate<Entity>
 				break;
 		}
 
-		if (this.getTableReference<LineType>(builder, this.LineTypeHandle, this.LineTypeName, out LineType ltype))
+		if (this.getTableReference<LineType>(builder, this.LineTypeHandle, this.LineTypeName, out LineType ltype, createMissing: true))
 		{
 			this.CadObject.LineType = ltype;
 		}
