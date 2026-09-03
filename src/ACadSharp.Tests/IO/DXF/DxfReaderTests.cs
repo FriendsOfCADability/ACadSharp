@@ -1,7 +1,9 @@
 ﻿using ACadSharp.Entities;
 using ACadSharp.IO;
 using ACadSharp.Tests.TestModels;
+using CSMath;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -201,5 +203,26 @@ public class DxfReaderTests : CadReaderTestsBase<DxfReader>
 
 		Assert.True(notified, "Expected a warning notification about the orphaned TABLE section.");
 		Assert.True(doc.Layers.Contains("TestLayer"), "Layer 'TestLayer' should be imported from the orphaned TABLE section.");
+	}
+
+	[Fact]
+	public void ReadDuplicatedDefaultLayerTest()
+	{
+		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "duplicated_default_entries_AC1009.dxf");
+
+		CadDocument doc;
+		using (DxfReader reader = new DxfReader(path))
+		{
+			doc = reader.Read();
+		}
+
+		Assert.True(doc.Layers.Contains("0"));
+		Assert.True(doc.Layers.Contains("Kanten"), "Layers referenced by entities but missing in the LAYER table are created.");
+		Assert.Equal("Kanten", doc.Entities.OfType<Line>().Single().Layer.Name);
+
+		DimensionLinear dim = doc.Entities.OfType<DimensionLinear>().Single();
+		Assert.Equal("*D0", dim.Block.Name);
+		Assert.Equal(new XYZ(0, 0, 0), dim.FirstPoint);
+		Assert.Equal(new XYZ(100, 0, 0), dim.SecondPoint);
 	}
 }
