@@ -1,7 +1,9 @@
 ﻿using ACadSharp.Entities;
 using ACadSharp.IO;
+using ACadSharp.Tables;
 using ACadSharp.Tests.TestModels;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -179,5 +181,26 @@ public class DxfReaderTests : CadReaderTestsBase<DxfReader>
 		Assert.NotNull(doc.UCSs);
 		Assert.NotNull(doc.Views);
 		Assert.NotNull(doc.VPorts);
+	}
+
+	[Fact]
+	public void ReadMissingLayerTest()
+	{
+		//https://github.com/DomCR/ACadSharp/issues/1244
+		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "missing_layer_AC1009.dxf");
+
+		CadDocument doc;
+		using (DxfReader reader = new DxfReader(path))
+		{
+			doc = reader.Read();
+		}
+
+		Assert.Equal(3, doc.Layers.Count);
+		Assert.True(doc.Layers.TryGetValue("Kanten", out Layer kanten));
+		Assert.True(doc.Layers.TryGetValue("Bohrungen", out Layer bohrungen));
+		Assert.Equal(doc, kanten.Document);
+
+		Assert.All(doc.Entities.OfType<Line>(), l => Assert.Same(kanten, l.Layer));
+		Assert.Same(bohrungen, doc.Entities.OfType<Circle>().Single().Layer);
 	}
 }
