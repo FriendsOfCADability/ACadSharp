@@ -225,4 +225,21 @@ public class DxfReaderTests : CadReaderTestsBase<DxfReader>
 		Assert.Equal(new XYZ(0, 0, 0), dim.FirstPoint);
 		Assert.Equal(new XYZ(100, 0, 0), dim.SecondPoint);
 	}
+
+	[Fact]
+	public void ReadDuplicatedEntryWithoutDefaultTest()
+	{
+		//https://github.com/DomCR/ACadSharp/issues/1239
+		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "duplicated_entry_no_default_AC1009.dxf");
+
+		CadDocument doc;
+		using (DxfReader reader = new DxfReader(path))
+		{
+			doc = reader.Read();
+		}
+
+		Assert.True(doc.Layers.Contains("A"));
+		Assert.Single(doc.Layers.Where(l => l.Name == "A"));
+		Assert.Equal("A", doc.Entities.OfType<Line>().Single().Layer.Name);
+	}
 }
