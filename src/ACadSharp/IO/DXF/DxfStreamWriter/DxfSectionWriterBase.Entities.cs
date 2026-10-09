@@ -1,5 +1,5 @@
 ﻿using ACadSharp.Entities;
-using ACadSharp.Entities.AecObjects;
+using ACadSharp.Entities.AecEntities;
 using ACadSharp.Entities.Mechanical;
 using ACadSharp.Objects;
 using CSMath;
@@ -159,6 +159,7 @@ internal abstract partial class DxfSectionWriterBase
 			case Solid3D:
 			case CadBody:
 			case Region:
+			case Surface:
 				this.notify($"Entity type not implemented {entity.GetType().FullName}", NotificationType.NotImplemented);
 				return false;
 			default:
@@ -255,7 +256,6 @@ internal abstract partial class DxfSectionWriterBase
 		}
 
 		this._writer.Write(71, (short)image.ClipType, map);
-
 		if (image.ClipType == ClipType.Polygonal)
 		{
 			this._writer.Write(91, image.ClipBoundaryVertices.Count + 1, map);
