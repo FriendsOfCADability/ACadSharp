@@ -202,6 +202,9 @@ public class DxfReaderTests : CadReaderTestsBase<DxfReader>
 		Assert.Equal(new XYZ(50, 10, 0), linear.TextMiddlePoint);
 		Assert.Equal(new XYZ(0, 0, 0), linear.FirstPoint);
 		Assert.Equal(new XYZ(100, 0, 0), linear.SecondPoint);
+		//AcDbDimension codes written after the code 70
+		Assert.Equal("<> mm", linear.Text);
+		AssertUtils.AreEqual(MathHelper.DegToRad(30), linear.TextRotation);
 
 		DimensionRadius radius = doc.Entities.OfType<DimensionRadius>().Single();
 		Assert.Equal(new XYZ(0, 0, 0), radius.DefinitionPoint);

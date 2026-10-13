@@ -821,6 +821,12 @@ internal abstract class DxfSectionReaderBase
 						default:
 							break;
 					}
+
+					//The codes that follow belong to the dimension type,
+					//DimensionLinear keeps its points in AcDbAlignedDimension and the code 50 is read by this method
+					this.currentSubclass = tmp.CadObject is DimensionLinear
+						? DxfSubclassMarker.AlignedDimension
+						: tmp.CadObject.SubclassMarker;
 				}
 				return true;
 			//Measurement - read only
@@ -875,28 +881,20 @@ internal abstract class DxfSectionReaderBase
 						return false;
 				}
 			default:
-				if (this._builder.Version < ACadVersion.AC1012)
-				{
-					//Pre R13 files do not have the subclass markers, the dimension type is only known after the code 70
-					//so the value can belong to any of the subclasses of the current dimension type
-					this.currentSubclass = tmp.CadObject.SubclassMarker;
-					foreach (DxfClassMap classMap in map.SubClasses.Values)
-					{
-						if (this.tryAssignCurrentValue(template.CadObject, classMap))
-						{
-							return true;
-						}
-					}
-
-					return false;
-				}
-
 				if (string.IsNullOrEmpty(this.currentSubclass))
 				{
+					//Pre R13 files do not have the subclass markers
 					this.currentSubclass = tmp.CadObject.SubclassMarker;
 				}
 
-				return this.tryAssignCurrentValue(template.CadObject, map);
+				if (this.tryAssignCurrentValue(template.CadObject, map))
+				{
+					return true;
+				}
+
+				//Pre R13 files write the AcDbDimension codes 1, 53 or 210 after the code 70, mixed with the codes of the dimension type
+				return this._builder.Version < ACadVersion.AC1012
+					&& this.tryAssignCurrentValue(template.CadObject, map.SubClasses[DxfSubclassMarker.Dimension]);
 		}
 	}
 
