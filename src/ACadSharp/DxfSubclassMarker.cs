@@ -2,6 +2,8 @@
 
 public static class DxfSubclassMarker
 {
+	public const string AcDbDynamicBlockPurgePreventer = "AcDbDynamicBlockPurgePreventer";
+
 	public const string AcDbPlaceHolder = "AcDbPlaceHolder";
 
 	public const string AecDbCleanupGroupDef = "AecDbCleanupGroupDef";
@@ -22,6 +24,8 @@ public static class DxfSubclassMarker
 
 	public const string Arc = "AcDbArc";
 
+	public const string ArcDimension = "AcDbArcDimension";
+
 	public const string Attribute = "AcDbAttribute";
 
 	public const string AttributeDefinition = "AcDbAttributeDefinition";
@@ -40,7 +44,13 @@ public static class DxfSubclassMarker
 
 	public const string BlockActionBasePt = "AcDbBlockActionWithBasePt";
 
-	public const string BlockBasePointParameter = "AcDbBlockBasePointParameter";
+	public const string BlockAlignmentGrip = "AcDbBlockAlignmentGrip";
+
+	public const string BlockAlignmentParameter = "AcDbBlockAlignmentParameter";
+
+	public const string BlockArrayAction = "AcDbBlockArrayAction";
+
+	public const string BlockBasePointParameter = "AcDbBlockBasepointParameter";
 
 	public const string BlockBegin = "AcDbBlockBegin";
 
@@ -58,7 +68,13 @@ public static class DxfSubclassMarker
 
 	public const string BlockGripExpression = "AcDbBlockGripExpr";
 
+	public const string BlockLinearGrip = "AcDbBlockLinearGrip";
+
 	public const string BlockLinearParameter = "AcDbBlockLinearParameter";
+
+	public const string BlockLookupAction = "AcDbBlockLookupAction";
+
+	public const string BlockLookupGrip = "AcDbBlockLookUpGrip";
 
 	public const string BlockLookupParameter = "AcDbBlockLookUpParameter";
 
@@ -67,6 +83,12 @@ public static class DxfSubclassMarker
 	public const string BlockParameter = "AcDbBlockParameter";
 
 	public const string BlockPointParameter = "AcDbBlockPointParameter";
+
+	public const string BlockPolarGrip = "AcDbBlockPolarGrip";
+
+	public const string BlockPolarParameter = "AcDbBlockPolarParameter";
+
+	public const string BlockPolarStretchAction = "AcDbBlockPolarStretchAction";
 
 	public const string BlockRecord = "AcDbBlockTableRecord";
 
@@ -78,11 +100,17 @@ public static class DxfSubclassMarker
 
 	public const string BlockRotationParameter = "AcDbBlockRotationParameter";
 
+	public const string BlockScaleAction = "AcDbBlockScaleAction";
+
+	public const string BlockStretchAction = "AcDbBlockStretchAction";
+
 	public const string BlockVisibilityGrip = "AcDbBlockVisibilityGrip";
 
 	public const string BlockVisibilityParameter = "AcDbBlockVisibilityParameter";
 
 	public const string BlockXYGrip = "AcDbBlockXYGrip";
+
+	public const string BlockXYParameter = "AcDbBlockXYParameter";
 
 	public const string CellStyleMap = "AcDbCellStyleMap";
 
@@ -115,6 +143,8 @@ public static class DxfSubclassMarker
 	public const string EvalGraph = "AcDbEvalGraph";
 
 	public const string EvalGraphExpr = "AcDbEvalExpr";
+
+	public const string ExtrudedSurface = "AcDbExtrudedSurface";
 
 	public const string Face3d = "AcDbFace";
 
@@ -154,6 +184,8 @@ public static class DxfSubclassMarker
 
 	public const string LinkedTableData = "AcDbLinkedTableData";
 
+	public const string LoftedSurface = "AcDbLoftedSurface";
+
 	public const string LwPolyline = "AcDbPolyline";
 
 	public const string Material = "AcDbMaterial";
@@ -178,6 +210,8 @@ public static class DxfSubclassMarker
 
 	public const string MultiLeaderObjectContextData = "AcDbMLeaderObjectContextData";
 
+	public const string NurbSurface = "AcDbNurbSurface";
+
 	public const string ObjectContextData = "AcDbObjectContextData";
 
 	public const string Ole2Frame = "AcDbOle2Frame";
@@ -191,6 +225,8 @@ public static class DxfSubclassMarker
 	public const string PdfDefinition = "AcDbPdfDefinition";
 
 	public const string PdfReference = "AcDbPdfReference";
+
+	public const string PlaneSurface = "AcDbPlaneSurface";
 
 	public const string PlotSettings = "AcDbPlotSettings";
 
@@ -230,6 +266,8 @@ public static class DxfSubclassMarker
 
 	public const string Ray = "AcDbRay";
 
+	public const string RevolvedSurface = "AcDbRevolvedSurface";
+
 	public const string Scale = "AcDbScale";
 
 	public const string Shape = "AcDbShape";
@@ -243,6 +281,10 @@ public static class DxfSubclassMarker
 	public const string SpatialFilter = "AcDbSpatialFilter";
 
 	public const string Spline = "AcDbSpline";
+
+	public const string Surface = "AcDbSurface";
+
+	public const string SweptSurface = "AcDbSweptSurface";
 
 	public const string Table = "AcDbSymbolTable";
 
@@ -259,8 +301,6 @@ public static class DxfSubclassMarker
 	public const string TextStyle = "AcDbTextStyleTableRecord";
 
 	public const string Tolerance = "AcDbFcf";
-
-	public const string Trace = "AcDbTrace";
 
 	public const string Ucs = "AcDbUCSTableRecord";
 
@@ -279,6 +319,8 @@ public static class DxfSubclassMarker
 	public const string VPort = "AcDbViewportTableRecord";
 
 	public const string Wipeout = "AcDbWipeout";
+
+	public const string WipeoutVariables = "AcDbWipeoutVariables";
 
 	public const string XLine = "AcDbXline";
 

@@ -4,6 +4,7 @@ using ACadSharp.Objects;
 using ACadSharp.Tables;
 using ACadSharp.XData;
 using CSMath;
+using CSMath.Extensions;
 using CSUtilities.Extensions;
 using System;
 using System.Collections.Generic;
@@ -165,6 +166,7 @@ internal abstract class DxfSectionReaderBase
 			case DxfFileToken.EntityCircle:
 				return this.readEntityCodes<Circle>(new CadEntityTemplate<Circle>(), this.readCircle);
 			case DxfFileToken.EntityDimension:
+			case DxfFileToken.EntityArcDimension:
 				var dimTemplate = this.readEntityCodes<Dimension>(new CadDimensionTemplate(), this.readDimension);
 				if (dimTemplate.CadObject is CadDimensionTemplate.DimensionPlaceholder)
 				{
@@ -227,6 +229,20 @@ internal abstract class DxfSectionReaderBase
 				return this.readEntityCodes<Solid3D>(new CadSolid3DTemplate(), this.readSolid3d);
 			case DxfFileToken.EntityRegion:
 				return this.readEntityCodes<Region>(new CadModelerGeometryTemplate<Region>(), this.readModelerGeometry);
+			case DxfFileToken.EntitySurface:
+				return this.readEntityCodes<Surface>(new CadModelerGeometryTemplate<Surface>(), this.readSurfaceEntity);
+			case DxfFileToken.EntityExtrudedSurface:
+				return this.readEntityCodes<ExtrudedSurface>(new CadModelerGeometryTemplate<ExtrudedSurface>(), this.readSurfaceEntity);
+			case DxfFileToken.EntityLoftedSurface:
+				return this.readEntityCodes<LoftedSurface>(new CadModelerGeometryTemplate<LoftedSurface>(), this.readSurfaceEntity);
+			case DxfFileToken.EntityNurbSurface:
+				return this.readEntityCodes<NurbSurface>(new CadModelerGeometryTemplate<NurbSurface>(), this.readSurfaceEntity);
+			case DxfFileToken.EntityPlaneSurface:
+				return this.readEntityCodes<PlaneSurface>(new CadModelerGeometryTemplate<PlaneSurface>(), this.readSurfaceEntity);
+			case DxfFileToken.EntityRevolvedSurface:
+				return this.readEntityCodes<RevolvedSurface>(new CadModelerGeometryTemplate<RevolvedSurface>(), this.readSurfaceEntity);
+			case DxfFileToken.EntitySweptSurface:
+				return this.readEntityCodes<SweptSurface>(new CadModelerGeometryTemplate<SweptSurface>(), this.readSurfaceEntity);
 			case DxfFileToken.EntityImage:
 				return this.readEntityCodes<RasterImage>(new CadWipeoutBaseTemplate(new RasterImage()), this.readWipeoutBase);
 			case DxfFileToken.EntityWipeout:
@@ -773,6 +789,9 @@ internal abstract class DxfSectionReaderBase
 				dim.Rotation = this._reader.ValueAsAngle;
 				map.SubClasses.TryAdd(DxfSubclassMarker.LinearDimension, DxfClassMap.Create<DimensionLinear>());
 				return true;
+			case 70 when tmp.CadObject is DimensionArc arc && this.currentSubclass == DxfSubclassMarker.ArcDimension:
+				arc.IsPartial = this._reader.ValueAsBool;
+				return true;
 			case 70:
 				//Flags do not have set
 				tmp.SetDimensionFlags((DimensionType)this._reader.ValueAsShort);
@@ -830,6 +849,7 @@ internal abstract class DxfSectionReaderBase
 			case 361:
 				return true;
 			case 100:
+				this.currentSubclass = this._reader.ValueAsString;
 				switch (this._reader.ValueAsString)
 				{
 					case DxfSubclassMarker.Dimension:
@@ -850,6 +870,10 @@ internal abstract class DxfSectionReaderBase
 						tmp.SetDimensionObject(new DimensionAngular3Pt());
 						map.SubClasses.TryAdd(this._reader.ValueAsString, DxfClassMap.Create<DimensionAngular3Pt>());
 						return true;
+					case DxfSubclassMarker.ArcDimension:
+						tmp.SetDimensionObject(new DimensionArc());
+						map.SubClasses.TryAdd(this._reader.ValueAsString, DxfClassMap.Create<DimensionArc>());
+						return true;
 					case DxfSubclassMarker.RadialDimension:
 						tmp.SetDimensionObject(new DimensionRadius());
 						map.SubClasses.TryAdd(this._reader.ValueAsString, DxfClassMap.Create<DimensionRadius>());
@@ -866,7 +890,13 @@ internal abstract class DxfSectionReaderBase
 						return false;
 				}
 			default:
-				return this.tryAssignCurrentValue(template.CadObject, map.SubClasses[tmp.CadObject.SubclassMarker]);
+				if (string.IsNullOrEmpty(this.currentSubclass))
+				{
+					//Pre R13 files do not have the subclass markers
+					this.currentSubclass = tmp.CadObject.SubclassMarker;
+				}
+
+				return this.tryAssignCurrentValue(template.CadObject, map);
 		}
 	}
 
@@ -1504,6 +1534,8 @@ internal abstract class DxfSectionReaderBase
 
 		switch (this._reader.Code)
 		{
+			case 71:
+				return true;
 			case 91:
 				var nvertices = this._reader.ValueAsInt;
 				for (int i = 0; i < nvertices; i++)
@@ -1590,6 +1622,29 @@ internal abstract class DxfSectionReaderBase
 				tmp.HistoryHandle = this._reader.ValueAsHandle;
 				return true;
 			default:
+				return this.readModelerGeometry(template, map, DxfSubclassMarker.ModelerGeometry);
+		}
+	}
+
+	private bool readSurfaceEntity(CadEntityTemplate template, DxfMap map, string subclass = null)
+	{
+		switch (this._reader.Code)
+		{
+			//SAT text and modeler geometry codes: same handling as the other
+			//modeler geometry entities (the template accumulates the payload)
+			case 1:
+			case 2:
+			case 3:
+			case 290:
+				return this.readModelerGeometry(template, map, DxfSubclassMarker.ModelerGeometry);
+			default:
+				//surface codes (the isoline counts) resolve through the map of
+				//the subclass being read
+				if (this.tryAssignCurrentValue(template.CadObject, map))
+				{
+					return true;
+				}
+
 				return this.readModelerGeometry(template, map, DxfSubclassMarker.ModelerGeometry);
 		}
 	}

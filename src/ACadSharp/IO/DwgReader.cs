@@ -117,18 +117,15 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		this._document.Header = this.ReadHeader();
 		this._document.Header.Document = this._document;
 
+		this.readTemplate();
 		this.readClasses();
-
 		this.readAppInfo();
-
-		//Read all the objects in the file
+		this.readDsPrototype_1b();
 		this.readObjects();
+		this.readAuxHeader();
 
-		//Attach the ACIS payloads stored in the AcDs data section (R2013+)
-		this.readAcDsData();
-
-		//Build the document
 		this._builder.BuildDocument();
+		this._builder.BuildDataStorage();
 
 		return this._document;
 	}
@@ -326,6 +323,29 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		return decompressedData;
 	}
 
+	private void getPageHeaderData(IDwgStreamReader sreader,
+			out long sectionType,
+			out long decompressedSize,
+			out long compressedSize,
+			out long compressionType,
+			out long checksum
+			)
+	{
+		//0x00	4	Section page type:
+		//Section page map: 0x41630e3b
+		//Section map: 0x4163003b
+		sectionType = sreader.ReadRawLong();
+		//0x04	4	Decompressed size of the data that follows
+		decompressedSize = sreader.ReadRawLong();
+		//0x08	4	Compressed size of the data that follows(CompDataSize)
+		compressedSize = sreader.ReadRawLong();
+
+		//0x0C	4	Compression type(0x02)
+		compressionType = sreader.ReadRawLong();
+		//0x10	4	Section page checksum
+		checksum = sreader.ReadRawLong();
+	}
+
 	private Stream getSectionBuffer15(DwgFileHeaderAC15 fileheader, string sectionName)
 	{
 		Stream stream = null;
@@ -459,54 +479,6 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		return memoryStream;
 	}
 
-	/// <summary>
-	/// Read the AcDs data section and attach the ACIS payloads to the modeler
-	/// geometry entities that flagged their data as stored there.
-	/// </summary>
-	/// <remarks>
-	/// Refers to AcDb:AcDsPrototype_1b data section (R2013+).
-	/// </remarks>
-	private void readAcDsData()
-	{
-		if (this._builder.AcisDsEntities.Count == 0)
-		{
-			return;
-		}
-
-		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.AcDsPrototype);
-		if (sreader == null)
-		{
-			this.triggerNotification($"AcDs data section not found, the ACIS payload of {this._builder.AcisDsEntities.Count} modeler geometry entities is not available", NotificationType.Warning);
-			return;
-		}
-
-		sreader.Stream.Position = 0;
-		byte[] buffer = new byte[sreader.Stream.Length];
-		sreader.Stream.Read(buffer, 0, buffer.Length);
-
-		Dictionary<ulong, byte[]> records = DwgAcDsDataReader.ReadRecords(
-			buffer,
-			message => this.triggerNotification(message, NotificationType.Warning));
-
-		int missing = 0;
-		foreach (Entities.ModelerGeometry entity in this._builder.AcisDsEntities)
-		{
-			if (records.TryGetValue(entity.Handle, out byte[] payload))
-			{
-				entity.AcisData = payload;
-			}
-			else
-			{
-				missing++;
-			}
-		}
-
-		if (missing > 0)
-		{
-			this.triggerNotification($"AcDs data section has no ACIS payload for {missing} of {this._builder.AcisDsEntities.Count} modeler geometry entities", NotificationType.Warning);
-		}
-	}
-
 	private IDwgStreamReader getSectionStream(string sectionName)
 	{
 		Stream sectionStream = null;
@@ -582,13 +554,20 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 #endif
 	}
 
-	/// <summary>
-	/// Read the classes section of the file.
-	/// </summary>
-	/// <remarks>
-	/// Refers to AcDb:Classes data section.
-	/// </remarks>
-	/// <returns></returns>
+	private void readAuxHeader()
+	{
+		this._fileHeader = this._fileHeader ?? this.readFileHeader();
+		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.AuxHeader);
+		if (sreader is null)
+		{
+			return;
+		}
+
+		var reader = new DwgAuxHeaderReader(this._fileHeader.AcadVersion, sreader);
+		reader.OnNotification += onNotificationEvent;
+		reader.Read();
+	}
+
 	private void readClasses()
 	{
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
@@ -605,128 +584,26 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		reader.Read();
 	}
 
-	/// <summary>
-	/// Read the handles of the file, each entry of the dictionary is composed by
-	/// the handler of the object (key) and the offset (value).
-	/// </summary>
-	/// <remarks>
-	/// Refers to AcDb:Handles data section.
-	/// </remarks>
-	/// <returns></returns>
-	private Dictionary<ulong, long> readHandles()
+	private void readDsPrototype_1b()
 	{
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
-		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.Handles);
-
-		var handleReader = new DwgHandleReader(this._fileHeader.AcadVersion, sreader);
-		handleReader.OnNotification += onNotificationEvent;
-
-		return handleReader.Read();
-	}
-
-	/// <summary>
-	/// Read the objects section of the files, this section contains all the entities.
-	/// </summary>
-	/// <remarks>
-	/// Refers to AcDb:AcDbObjects data section.
-	/// </remarks>
-	private void readObjects()
-	{
-		Dictionary<ulong, long> handles = this.readHandles();
-		this.readClasses();
-
-		IDwgStreamReader sreader = null;
-		if (this._fileHeader.AcadVersion <= ACadVersion.AC1015)
+		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.AcDsPrototype);
+		if (sreader is null)
 		{
-			sreader = DwgStreamReaderBase.GetStreamHandler(this._fileHeader.AcadVersion, this._fileStream.Stream, this._encoding);
-			//Handles are in absolute offset for this versions
-			sreader.Position = 0;
-		}
-		else
-		{
-			sreader = this.getSectionStream(DwgSectionDefinition.AcDbObjects);
+			return;
 		}
 
-		Queue<ulong> objectHandles = new Queue<ulong>(this._builder.HeaderHandles.GetHandles()
-			.Where(o => o.HasValue)
-			.Select(a => a.Value));
+		var reader = new DwgPrototype1bReader(this._fileHeader.AcadVersion, this._builder, sreader);
+		reader.OnNotification += this.onNotificationEvent;
+		reader.Read();
 
-		DwgObjectReader sectionReader = new DwgObjectReader(
-			this._fileHeader.AcadVersion,
-			this._builder,
-			sreader,
-			objectHandles,
-			handles,
-			this._document.Classes);
-
-		sectionReader.Read();
-	}
-
-	/// <summary>
-	/// Method only needed for versions <see cref="ACadVersion.AC1015"/> or lower.
-	/// </summary>
-	/// <remarks>
-	/// Refers to AcDb:ObjFreeSpace data section.
-	/// </remarks>
-	/// <returns>the offset where the object section is</returns>
-	private uint readObjFreeSpace()
-	{
-		this._fileHeader = this._fileHeader ?? this.readFileHeader();
-
-		if (this._fileHeader.AcadVersion < ACadVersion.AC1018)
-			return 0;
-
-		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.ObjFreeSpace);
-
-		//Int32				4	0
-		//UInt32			4	Approximate number of objects in the drawing(number of handles).
-		//Julian datetime	8	If version > R14 then system variable TDUPDATE otherwise TDUUPDATE.
-		sreader.Advance(16);
-
-		//UInt32	4	Offset of the objects section in the stream.
-		return sreader.ReadUInt();
-	}
-
-	/// <summary>
-	/// Read the Template section.
-	/// </summary>
-	/// <remarks>
-	/// Refers to AcDb:Template data section.
-	/// </remarks>
-	/// <returns></returns>
-	private void readTemplate()
-	{
-		this._fileHeader = this._fileHeader ?? this.readFileHeader();
-
-		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.Template);
-
-		throw new NotImplementedException();
-	}
-
-	#region File Header reading methods
-
-	private void getPageHeaderData(IDwgStreamReader sreader,
-			out long sectionType,
-			out long decompressedSize,
-			out long compressedSize,
-			out long compressionType,
-			out long checksum
-			)
-	{
-		//0x00	4	Section page type:
-		//Section page map: 0x41630e3b
-		//Section map: 0x4163003b
-		sectionType = sreader.ReadRawLong();
-		//0x04	4	Decompressed size of the data that follows
-		decompressedSize = sreader.ReadRawLong();
-		//0x08	4	Compressed size of the data that follows(CompDataSize)
-		compressedSize = sreader.ReadRawLong();
-
-		//0x0C	4	Compression type(0x02)
-		compressionType = sreader.ReadRawLong();
-		//0x10	4	Section page checksum
-		checksum = sreader.ReadRawLong();
+		//Backwards compatibility with older versions of the library
+		//Remove on 3.9.0
+		sreader.Position = 0;
+		var obs = new DwgPrototype1bReader_obsolete(this._fileHeader.AcadVersion, this._builder, sreader);
+		obs.OnNotification += onNotificationEvent;
+		this._document.DataStorage = obs.Read();
 	}
 
 	/// <summary>
@@ -1275,7 +1152,121 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		sreader.Advance(80);
 	}
 
-	#endregion File Header reading methods
+	/// <summary>
+	/// Read the handles of the file, each entry of the dictionary is composed by
+	/// the handler of the object (key) and the offset (value).
+	/// </summary>
+	/// <remarks>
+	/// Refers to AcDb:Handles data section.
+	/// </remarks>
+	/// <returns></returns>
+	private Dictionary<ulong, long> readHandles()
+	{
+		this._fileHeader = this._fileHeader ?? this.readFileHeader();
+
+		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.Handles);
+
+		var handleReader = new DwgHandleReader(this._fileHeader.AcadVersion, sreader);
+		handleReader.OnNotification += onNotificationEvent;
+
+		return handleReader.Read();
+	}
+
+	/// <summary>
+	/// Read the objects section of the files, this section contains all the entities.
+	/// </summary>
+	/// <remarks>
+	/// Refers to AcDb:AcDbObjects data section.
+	/// </remarks>
+	private void readObjects()
+	{
+		Dictionary<ulong, long> handles = this.readHandles();
+
+		IDwgStreamReader sreader = null;
+		if (this._fileHeader.AcadVersion <= ACadVersion.AC1015)
+		{
+			sreader = DwgStreamReaderBase.GetStreamHandler(this._fileHeader.AcadVersion, this._fileStream.Stream, this._encoding);
+			//Handles are in absolute offset for this versions
+			sreader.Position = 0;
+		}
+		else
+		{
+			sreader = this.getSectionStream(DwgSectionDefinition.AcDbObjects);
+		}
+
+		Queue<ulong> objectHandles = new Queue<ulong>(this._builder.HeaderHandles.GetHandles()
+			.Where(o => o.HasValue)
+			.Select(a => a.Value));
+
+		DwgObjectReader sectionReader = new DwgObjectReader(
+			this._fileHeader.AcadVersion,
+			this._builder,
+			sreader,
+			objectHandles,
+			handles,
+			this._document.Classes);
+
+		sectionReader.Read();
+	}
+
+	/// <summary>
+	/// Method only needed for versions <see cref="ACadVersion.AC1015"/> or lower.
+	/// </summary>
+	/// <remarks>
+	/// Refers to AcDb:ObjFreeSpace data section.
+	/// </remarks>
+	/// <returns>the offset where the object section is</returns>
+	private uint readObjFreeSpace()
+	{
+		this._fileHeader = this._fileHeader ?? this.readFileHeader();
+
+		if (this._fileHeader.AcadVersion < ACadVersion.AC1018)
+			return 0;
+
+		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.ObjFreeSpace);
+
+		//Int32				4	0
+		//UInt32			4	Approximate number of objects in the drawing(number of handles).
+		//Julian datetime	8	If version > R14 then system variable TDUPDATE otherwise TDUUPDATE.
+		sreader.Advance(16);
+
+		//UInt32	4	Offset of the objects section in the stream.
+		return sreader.ReadUInt();
+	}
+
+	/// <summary>
+	/// Read the Template section.
+	/// </summary>
+	/// <remarks>
+	/// Refers to AcDb:Template data section.
+	/// </remarks>
+	/// <returns></returns>
+	private void readTemplate()
+	{
+		this._fileHeader = this._fileHeader ?? this.readFileHeader();
+
+		if (this._fileHeader.AcadVersion < ACadVersion.AC1018)
+			return;
+
+		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.Template);
+		if (sreader == null || sreader.Stream.Length < 4) // The section is often empty
+			return;
+
+		// Template description string length in bytes (the ODA always writes 0 here)
+		short descriptionLength = sreader.ReadShort();
+		if (descriptionLength > 0)
+		{
+			if (sreader.Stream.Length < 4 + descriptionLength)
+				return;
+
+			//Skip the description string when present
+			sreader.ReadBytes(descriptionLength);
+		}
+
+		// MEASUREMENT system variable (0 = English, 1 = Metric)
+		short measurement = sreader.ReadShort();
+		this._document.Header.MeasurementUnits = (MeasurementUnits)measurement;
+	}
 
 	/// <summary>
 	/// Apply a simple reed Solomon decoding to a byte array.

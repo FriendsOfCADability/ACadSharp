@@ -5,6 +5,7 @@ using ACadSharp.Objects;
 using ACadSharp.Objects.Collections;
 using ACadSharp.Tables;
 using ACadSharp.Tables.Collections;
+using CSUtilities.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,6 +44,12 @@ public class CadDocument : IHandledCadObject
 	/// The collection is null if the <see cref="CadDictionary.AcadColor"/> doesn't exist in the root dictionary.
 	/// </remarks>
 	public ColorCollection Colors { get; private set; }
+
+	/// <summary>
+	/// The data stored in the Prototype1b header section. This primarily contains ACIS and thumbnail data
+	/// </summary>
+	[Obsolete("This property is obsolete and will be removed in future versions.")]
+	public Prototype1b.DataStorage DataStorage { get; set; }
 
 	/// <summary>
 	/// The collection of the system variables in the drawing.
@@ -243,8 +250,6 @@ public class CadDocument : IHandledCadObject
 	/// </summary>
 	public void CreateDefaults()
 	{
-		this.Classes.UpdateDxfClasses();
-
 		//Header and summary
 		if (this.Header is null)
 		{
@@ -374,6 +379,18 @@ public class CadDocument : IHandledCadObject
 	}
 
 	/// <summary>
+	/// Gets the number of instances of a specific DXF object type in the document.
+	/// </summary>
+	/// <param name="dxfName">The name of the DXF object type.</param>
+	/// <returns>The number of instances of the specified DXF object type.</returns>
+	public int GetInstanceCount(string dxfName)
+	{
+		return this._cadObjects.Values
+			.OfType<CadObject>()
+			.Count(c => c.ObjectName == dxfName);
+	}
+
+	/// <summary>
 	/// Reassign all the handles in the document to avoid the variable <see cref="CadHeader.HandleSeed"/> to grow past its limit.
 	/// </summary>
 	public void RestoreHandles()
@@ -473,9 +490,9 @@ public class CadDocument : IHandledCadObject
 		if (handle == this.Handle)
 			return false;
 
-		if (this._cadObjects.TryGetValue(handle, out IHandledCadObject obj))
+		if (this._cadObjects.TryGetValue(handle, out IHandledCadObject obj) && obj is T)
 		{
-			cadObject = obj as T;
+			cadObject = (T)obj;
 			return true;
 		}
 
@@ -569,20 +586,17 @@ public class CadDocument : IHandledCadObject
 		{
 			this.Classes.Clear();
 		}
+		else
+		{
+			this.Classes.ForEach(c => c.InstanceCount = 0);
+		}
 
-		this.Classes.UpdateDxfClasses();
-	}
+		foreach (IDxfClassDefined item in this._cadObjects.Values.OfType<IDxfClassDefined>())
+		{
+			this.Classes.IncreaseInstanceCount(item.GetDxfClass());
+		}
 
-	/// <summary>
-	/// Gets the number of instances of a specific DXF object type in the document.
-	/// </summary>
-	/// <param name="dxfName">The name of the DXF object type.</param>
-	/// <returns>The number of instances of the specified DXF object type.</returns>
-	public int GetInstanceCount(string dxfName)
-	{
-		return this._cadObjects.Values
-			.OfType<CadObject>()
-			.Count(c => c.ObjectName == dxfName);
+		this.Classes.ResetClassNumbers();
 	}
 
 	/// <summary>
@@ -601,17 +615,52 @@ public class CadDocument : IHandledCadObject
 			this._cadObjects.Remove(item.Handle);
 		}
 
-		var rasterImages = this._cadObjects.Values.OfType<RasterImage>().ToList();
-		foreach (RasterImage image in rasterImages)
+		var values = this._cadObjects.Values.OfType<RasterImage>().ToList();
+		foreach (RasterImage image in values)
 		{
+			if (image.Definition == null)
+			{
+				continue;
+			}
+
 			image.DefinitionReactor = new ImageDefinitionReactor(image);
-			this.addCadObject(image.DefinitionReactor);
+			this.AddCadObject(image.DefinitionReactor);
 			image.Definition.AddReactor(image.DefinitionReactor);
 		}
 	}
 
+	internal void AddCadObject(CadObject cadObject)
+	{
+		if (cadObject.Document != null)
+		{
+			throw new ArgumentException($"The item with handle {cadObject.Handle} is already assigned to a document");
+		}
+
+		if (cadObject.Handle == 0 || this._cadObjects.ContainsKey(cadObject.Handle))
+		{
+			var nextHandle = this.Header.HandleSeed;
+
+			cadObject.Handle = nextHandle;
+			this.Header.HandleSeed = nextHandle + 1;
+		}
+		else if (cadObject.Handle >= this.Header.HandleSeed)
+		{
+			this.Header.HandleSeed = cadObject.Handle + 1;
+		}
+
+		this._cadObjects.Add(cadObject.Handle, cadObject);
+
+		if (cadObject is BlockRecord record)
+		{
+			this.AddCadObject(record.BlockEntity);
+			this.AddCadObject(record.BlockEnd);
+		}
+
+		cadObject.AssignDocument(this);
+	}
+
 	internal void RegisterCollection<T>(IObservableCadCollection<T> collection)
-				where T : CadObject
+			where T : CadObject
 	{
 		switch (collection)
 		{
@@ -658,7 +707,7 @@ public class CadDocument : IHandledCadObject
 
 		if (collection is CadObject cadObject)
 		{
-			this.addCadObject(cadObject);
+			this.AddCadObject(cadObject);
 		}
 
 		if (collection is ISeqendCollection seqendColleciton)
@@ -668,7 +717,7 @@ public class CadDocument : IHandledCadObject
 
 			if (seqendColleciton.Seqend != null)
 			{
-				this.addCadObject(seqendColleciton.Seqend);
+				this.AddCadObject(seqendColleciton.Seqend);
 			}
 		}
 
@@ -680,13 +729,24 @@ public class CadDocument : IHandledCadObject
 			}
 			else
 			{
-				this.addCadObject(item);
+				this.AddCadObject(item);
 			}
 		}
 	}
 
+	internal void RemoveCadObject(CadObject cadObject)
+	{
+		if (!this.TryGetCadObject(cadObject.Handle, out CadObject _)
+			|| !this._cadObjects.Remove(cadObject.Handle))
+		{
+			return;
+		}
+
+		cadObject.UnassignDocument();
+	}
+
 	internal void UnregisterCollection<T>(IObservableCadCollection<T> collection)
-		where T : CadObject
+			where T : CadObject
 	{
 		switch (collection)
 		{
@@ -707,7 +767,7 @@ public class CadDocument : IHandledCadObject
 
 		if (collection is CadObject cadObject)
 		{
-			this.removeCadObject(cadObject);
+			this.RemoveCadObject(cadObject);
 		}
 
 		if (collection is ISeqendCollection seqendColleciton)
@@ -717,7 +777,7 @@ public class CadDocument : IHandledCadObject
 
 			if (seqendColleciton.Seqend != null)
 			{
-				this.removeCadObject(seqendColleciton.Seqend);
+				this.RemoveCadObject(seqendColleciton.Seqend);
 			}
 		}
 
@@ -729,39 +789,9 @@ public class CadDocument : IHandledCadObject
 			}
 			else
 			{
-				this.removeCadObject(item);
+				this.RemoveCadObject(item);
 			}
 		}
-	}
-
-	private void addCadObject(CadObject cadObject)
-	{
-		if (cadObject.Document != null)
-		{
-			throw new ArgumentException($"The item with handle {cadObject.Handle} is already assigned to a document");
-		}
-
-		if (cadObject.Handle == 0 || this._cadObjects.ContainsKey(cadObject.Handle))
-		{
-			var nextHandle = this.Header.HandleSeed;
-
-			cadObject.Handle = nextHandle;
-			this.Header.HandleSeed = nextHandle + 1;
-		}
-		else if (cadObject.Handle >= this.Header.HandleSeed)
-		{
-			this.Header.HandleSeed = cadObject.Handle + 1;
-		}
-
-		this._cadObjects.Add(cadObject.Handle, cadObject);
-
-		if (cadObject is BlockRecord record)
-		{
-			this.addCadObject(record.BlockEntity);
-			this.addCadObject(record.BlockEnd);
-		}
-
-		cadObject.AssignDocument(this);
 	}
 
 	private void onAdd(object sender, CollectionChangedEventArgs e)
@@ -772,7 +802,7 @@ public class CadDocument : IHandledCadObject
 		}
 		else
 		{
-			this.addCadObject(e.Item);
+			this.AddCadObject(e.Item);
 		}
 	}
 
@@ -784,19 +814,8 @@ public class CadDocument : IHandledCadObject
 		}
 		else
 		{
-			this.removeCadObject(e.Item);
+			this.RemoveCadObject(e.Item);
 		}
-	}
-
-	private void removeCadObject(CadObject cadObject)
-	{
-		if (!this.TryGetCadObject(cadObject.Handle, out CadObject _)
-			|| !this._cadObjects.Remove(cadObject.Handle))
-		{
-			return;
-		}
-
-		cadObject.UnassignDocument();
 	}
 
 	private bool updateCollection(string dictName, bool createDictionary, out CadDictionary dictionary)
