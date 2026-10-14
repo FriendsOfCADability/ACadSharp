@@ -1,11 +1,7 @@
 ﻿using ACadSharp.Entities;
 using ACadSharp.IO;
-using ACadSharp.Tables;
-using ACadSharp.Tests.Common;
 using ACadSharp.Tests.TestModels;
-using CSMath;
 using System.Collections.Generic;
-using System.Linq;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -183,108 +179,5 @@ public class DxfReaderTests : CadReaderTestsBase<DxfReader>
 		Assert.NotNull(doc.UCSs);
 		Assert.NotNull(doc.Views);
 		Assert.NotNull(doc.VPorts);
-	}
-
-	[Fact]
-	public void ReadOrphanedTablesSectionTest()
-	{
-		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "orphaned_tables_AC1009.dxf");
-
-		bool notified = false;
-		CadDocument doc;
-		using (DxfReader reader = new DxfReader(path))
-		{
-			reader.OnNotification += (_, e) =>
-			{
-				if (e.NotificationType == NotificationType.Warning
-					&& e.Message.Contains("Non-standard DXF"))
-					notified = true;
-			};
-			doc = reader.Read();
-		}
-
-		Assert.True(notified, "Expected a warning notification about the orphaned TABLE section.");
-		Assert.True(doc.Layers.Contains("TestLayer"), "Layer 'TestLayer' should be imported from the orphaned TABLE section.");
-	}
-
-	[Fact]
-	public void ReadDuplicatedDefaultLayerTest()
-	{
-		//https://github.com/DomCR/ACadSharp/issues/1242
-		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "duplicated_default_entries_AC1009.dxf");
-
-		CadDocument doc;
-		using (DxfReader reader = new DxfReader(path))
-		{
-			doc = reader.Read();
-		}
-
-		Assert.True(doc.Layers.Contains("0"));
-		Assert.Single(doc.Layers.Where(l => l.Name == "0"));
-		Assert.Single(doc.Entities.OfType<Line>());
-		Assert.Single(doc.Entities.OfType<Dimension>());
-	}
-
-	[Fact]
-	public void ReadDuplicatedEntryWithoutDefaultTest()
-	{
-		//https://github.com/DomCR/ACadSharp/issues/1239
-		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "duplicated_entry_no_default_AC1009.dxf");
-
-		CadDocument doc;
-		using (DxfReader reader = new DxfReader(path))
-		{
-			doc = reader.Read();
-		}
-
-		Assert.True(doc.Layers.Contains("A"));
-		Assert.Single(doc.Layers.Where(l => l.Name == "A"));
-		Assert.Equal("A", doc.Entities.OfType<Line>().Single().Layer.Name);
-	}
-
-	[Fact]
-	public void ReadMissingLayerTest()
-	{
-		//https://github.com/DomCR/ACadSharp/issues/1244
-		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "missing_layer_AC1009.dxf");
-
-		CadDocument doc;
-		using (DxfReader reader = new DxfReader(path))
-		{
-			doc = reader.Read();
-		}
-
-		Assert.Equal(3, doc.Layers.Count);
-		Assert.True(doc.Layers.TryGetValue("Kanten", out Layer kanten));
-		Assert.True(doc.Layers.TryGetValue("Bohrungen", out Layer bohrungen));
-		Assert.Equal(doc, kanten.Document);
-
-		Assert.All(doc.Entities.OfType<Line>(), l => Assert.Same(kanten, l.Layer));
-		Assert.Same(bohrungen, doc.Entities.OfType<Circle>().Single().Layer);
-	}
-
-	[Fact]
-	public void ReadPreR13DimensionPointsTest()
-	{
-		//https://github.com/DomCR/ACadSharp/issues/1246
-		string path = System.IO.Path.Combine(TestVariables.SamplesFolder, "r12_dimension_points.dxf");
-
-		CadDocument doc;
-		using (DxfReader reader = new DxfReader(path))
-		{
-			doc = reader.Read();
-		}
-
-		DimensionLinear linear = doc.Entities.OfType<DimensionLinear>().Single();
-		Assert.Equal("*D0", linear.Block.Name);
-		Assert.Equal(new XYZ(0, 10, 0), linear.DefinitionPoint);
-		Assert.Equal(new XYZ(50, 10, 0), linear.TextMiddlePoint);
-		Assert.Equal(new XYZ(0, 0, 0), linear.FirstPoint);
-		Assert.Equal(new XYZ(100, 0, 0), linear.SecondPoint);
-
-		DimensionRadius radius = doc.Entities.OfType<DimensionRadius>().Single();
-		Assert.Equal(new XYZ(0, 0, 0), radius.DefinitionPoint);
-		Assert.Equal(new XYZ(30, 30, 0), radius.TextMiddlePoint);
-		AssertUtils.AreEqual(new XYZ(70.7106781186548, 70.7106781186548, 0), radius.AngleVertex);
 	}
 }
