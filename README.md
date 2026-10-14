@@ -23,7 +23,8 @@ For other format export like svg, image, json or pdf check :construction: [ACadS
 
 |      | DxfReader | DxfWriter | DwgReader | DwgWriter |
 ------ | :-------: | :-------: | :-------: | :-------: |
-AC1009 |    :heavy_check_mark:    |   :x:     |    :x:    |    :x:    |
+AC1006 |    :x:    |   :x:     |    :heavy_check_mark:    |    :x:    |
+AC1009 |    :heavy_check_mark:    |   :x:     |    :heavy_check_mark:    |    :x:    |
 AC1012 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :x:    |    :x:    |
 AC1014 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
 AC1015 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
@@ -32,6 +33,8 @@ AC1021 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_m
 AC1024 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
 AC1027 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
 AC1032 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
+
+The DwgReader reads the drawings of R10 (AC1006) and R11/R12 (AC1009) with a reader of its own, their layout has nothing in common with the later versions. It follows the Kaitai Struct descriptions of these formats by Michal Josef Špaček ([CAD-Format-DWG-AC1006](https://github.com/michal-josef-spacek/CAD-Format-DWG-AC1006), [CAD-Format-DWG-AC1009](https://github.com/michal-josef-spacek/CAD-Format-DWG-AC1009)). These drawings can be read but not written.
 
 Code Example
 ---

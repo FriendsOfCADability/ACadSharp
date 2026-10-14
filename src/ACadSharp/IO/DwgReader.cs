@@ -11,6 +11,7 @@ using ACadSharp.Exceptions;
 using ACadSharp.IO.DWG;
 using ACadSharp.IO.DWG.DwgStreamReaders;
 using ACadSharp.IO.DWG.FileHeaders;
+using ACadSharp.IO.DWG.PreR13;
 
 namespace ACadSharp.IO;
 
@@ -102,6 +103,11 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <inheritdoc/>
 	public override CadDocument Read()
 	{
+		if (this.tryCreatePreR13Reader(out DwgPreR13Reader preR13Reader))
+		{
+			return preR13Reader.Read();
+		}
+
 		//Read the file header
 		this._fileHeader = this.readFileHeader();
 
@@ -137,6 +143,11 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <returns></returns>
 	public override CadHeader ReadHeader()
 	{
+		if (this.tryCreatePreR13Reader(out DwgPreR13Reader preR13Reader))
+		{
+			return preR13Reader.ReadHeader();
+		}
+
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
 		CadHeader header = new CadHeader();
@@ -164,6 +175,12 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <returns></returns>
 	public DwgPreview ReadPreview()
 	{
+		//The drawings older than R13 have no preview
+		if (this.isPreR13())
+		{
+			return null;
+		}
+
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
 		//Check if the preview exist
@@ -190,6 +207,11 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <returns></returns>
 	public CadSummaryInfo ReadSummaryInfo()
 	{
+		if (this.isPreR13())
+		{
+			return new CadSummaryInfo();
+		}
+
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
 		//Older versions than 2004 don't have summary info in it's file
@@ -204,6 +226,43 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 
 		DwgSummaryInfoReader summaryReader = new DwgSummaryInfoReader(this._fileHeader.AcadVersion, reader);
 		return summaryReader.Read();
+	}
+
+	private bool isPreR13()
+	{
+		if (this._fileHeader != null)
+		{
+			return false;
+		}
+
+		this._fileStream.Position = 0L;
+		ACadVersion version = CadUtils.GetVersionFromName(this._fileStream.ReadString(6, Encoding.ASCII));
+		return DwgPreR13Reader.IsSupported(version);
+	}
+
+	/// <summary>
+	/// Creates the reader for the drawings older than R13, they have their own layout.
+	/// </summary>
+	private bool tryCreatePreR13Reader(out DwgPreR13Reader reader)
+	{
+		reader = null;
+
+		if (!this.isPreR13())
+		{
+			return false;
+		}
+
+		this._fileStream.Position = 0L;
+		ACadVersion version = CadUtils.GetVersionFromName(this._fileStream.ReadString(6, Encoding.ASCII));
+
+		this._fileStream.Position = 0L;
+		using (MemoryStream memory = new MemoryStream())
+		{
+			this._fileStream.Stream.CopyTo(memory);
+			reader = new DwgPreR13Reader(memory.ToArray(), version, this.Configuration, this.onNotificationEvent);
+		}
+
+		return true;
 	}
 
 	/// <summary>
