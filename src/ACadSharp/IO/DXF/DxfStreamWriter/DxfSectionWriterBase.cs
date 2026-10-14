@@ -173,6 +173,11 @@ internal abstract partial class DxfSectionWriterBase
 					case ExtendedDataWorldCoordinate wcoord:
 						this._writer.Write(wcoord.Code, (IVector)wcoord.Value);
 						break;
+					case ExtendedDataLayer layerReference:
+						//Dxf references the layer by name (1003), unlike dwg which stores the handle
+						Layer layer = layerReference.ResolveReference(this._document);
+						this._writer.Write(DxfCode.ExtendedDataLayerName, layer?.Name ?? Layer.DefaultName);
+						break;
 					case IExtendedDataHandleReference handle:
 						ulong h = handle.Value;
 						if (handle.ResolveReference(this._document) == null)

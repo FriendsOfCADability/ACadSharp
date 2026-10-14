@@ -2865,6 +2865,10 @@ public abstract class WriterSingleObjectTests : IOTestsBase
 				Assert.NotEmpty(result.ExtendedData);
 				Assert.NotNull(doc.GetCadObject<AppId>(app.Handle));
 				Assert.NotNull(doc.GetCadObject<Layer>(layer.Handle));
+
+				Assert.True(result.ExtendedData.TryGet(app.Name, out ExtendedData edata));
+				ExtendedDataLayer layerRecord = Assert.Single(edata.Records.OfType<ExtendedDataLayer>());
+				Assert.Equal(layer.Name, layerRecord.ResolveReference(doc).Name);
 			};
 		}
 
