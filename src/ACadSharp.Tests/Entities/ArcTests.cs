@@ -36,18 +36,14 @@ public class ArcTests : CommonEntityTests<Arc>
 
 		XY center = Arc.GetCenter(start, end, bulge, out double radius);
 
-#if NETFRAMEWORK
 		center = MathHelper.FixZero(center);
-#endif
 
 		Assert.Equal(XY.Zero, center);
 		Assert.Equal(1, radius, TestVariables.DecimalPrecision);
 
 		Arc arc = Arc.CreateFromBulge(start, end, bulge);
 
-#if NETFRAMEWORK
 		arc.Center = MathHelper.FixZero(arc.Center);
-#endif
 
 		Assert.Equal(XYZ.Zero, arc.Center);
 		Assert.Equal(1, arc.Radius, TestVariables.DecimalPrecision);
@@ -89,17 +85,13 @@ public class ArcTests : CommonEntityTests<Arc>
 
 		XY center = Arc.GetCenter(start, end, bulge);
 
-#if NETFRAMEWORK
 		center = MathHelper.FixZero(center);
-#endif
 
 		Assert.Equal(XY.Zero, center);
 
 		Arc arc = Arc.CreateFromBulge(start, end, bulge);
 
-#if NETFRAMEWORK
 		arc.Center = MathHelper.FixZero(arc.Center);
-#endif
 
 		Assert.Equal(XYZ.Zero, arc.Center);
 		Assert.Equal(1, arc.Radius, TestVariables.DecimalPrecision);
