@@ -34,7 +34,7 @@ AC1024 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_m
 AC1027 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
 AC1032 |    :heavy_check_mark:    |   :heavy_check_mark:     |    :heavy_check_mark:    |    :heavy_check_mark:    |
 
-The DwgReader reads the drawings of R10 (AC1006) and R11/R12 (AC1009) with a reader of its own, their layout has nothing in common with the later versions. It follows the Kaitai Struct descriptions of these formats by Michal Josef Špaček ([CAD-Format-DWG-AC1006](https://github.com/michal-josef-spacek/CAD-Format-DWG-AC1006), [CAD-Format-DWG-AC1009](https://github.com/michal-josef-spacek/CAD-Format-DWG-AC1009)). These drawings can be read but not written.
+DWG files older than R13 (AC1006, AC1009) are read-only.
 
 Code Example
 ---

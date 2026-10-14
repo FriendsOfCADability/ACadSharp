@@ -1,4 +1,4 @@
-using ACadSharp.Entities;
+﻿using ACadSharp.Entities;
 using ACadSharp.Header;
 using ACadSharp.IO;
 using ACadSharp.Tables;
@@ -21,59 +21,117 @@ namespace ACadSharp.Tests.IO.DWG;
 /// The samples come from https://github.com/michal-josef-spacek/CAD-Format-DWG-AC1006 and
 /// https://github.com/michal-josef-spacek/CAD-Format-DWG-AC1009, see samples/pre_r13/README.md.
 /// </remarks>
-public class DwgPreR13ReaderTests
+public class DwgPreR13ReaderTests : CadReaderTestsBase<DwgReader>
 {
-	public static TheoryData<FileModel> PreR13Files { get; } = new();
+	private static string samplesFolder { get { return Path.Combine(TestVariables.SamplesFolder, "pre_r13"); } }
 
-	private readonly ITestOutputHelper _output;
-
-	static DwgPreR13ReaderTests()
+	public DwgPreR13ReaderTests(ITestOutputHelper output) : base(output)
 	{
-		foreach (string file in Directory.GetFiles(samplesFolder, "*.dwg", SearchOption.AllDirectories).OrderBy(f => f))
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void AssertBlockRecords(FileModel test)
+	{
+		base.AssertBlockRecords(test);
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void AssertDocumentDefaults(FileModel test)
+	{
+		base.AssertDocumentDefaults(test);
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void AssertDocumentHeader(FileModel test)
+	{
+		if (test.FileName == "line_linetype_eed.dwg")
 		{
-			PreR13Files.Add(new FileModel(file));
+			//The current line type of the drawing is DOT
+			CadDocument doc = this.getDocument(test, false);
+			Assert.Equal(doc.LineTypes["DOT"], doc.Header.CurrentLineType);
+			Assert.Equal(doc.TextStyles[TextStyle.DefaultName], doc.Header.CurrentTextStyle);
+			return;
+		}
+
+		base.AssertDocumentHeader(test);
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void AssertTableHierarchy(FileModel test)
+	{
+		base.AssertTableHierarchy(test);
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void CheckPaperViewportsTest(FileModel test)
+	{
+		base.CheckPaperViewportsTest(test);
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void OnProgressTest(FileModel test)
+	{
+		base.OnProgressTest(test);
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public void ReadCrcEnabledTest(FileModel test)
+	{
+		DwgReaderConfiguration configuration = new DwgReaderConfiguration();
+		configuration.CrcCheck = true;
+
+		List<NotificationEventArgs> notifications = new();
+		DwgReader.Read(test.Path, configuration, (sender, e) => notifications.Add(e));
+
+		Assert.DoesNotContain(notifications, n => n.Message.StartsWith("Invalid crc"));
+	}
+
+	[Theory]
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void ReadHeaderTest(FileModel test)
+	{
+		using (DwgReader reader = new DwgReader(test.Path, this.onNotification))
+		{
+			CadHeader header = reader.ReadHeader();
+
+			Assert.Equal(this.getVersion(test), header.Version);
+			Assert.Equal(1.0, header.LineTypeScale);
+			Assert.Null(reader.ReadPreview());
+			Assert.NotNull(reader.ReadSummaryInfo());
 		}
 	}
 
-	public DwgPreR13ReaderTests(ITestOutputHelper output)
-	{
-		this._output = output;
-	}
-
-	private static string samplesFolder { get { return Path.Combine(TestVariables.SamplesFolder, "pre_r13"); } }
-
 	[Theory]
-	[MemberData(nameof(PreR13Files))]
-	public void ReadWithoutNotifications(FileModel test)
+	[MemberData(nameof(DwgPreR13FilePaths))]
+	public override void ReadTest(FileModel test)
 	{
-		List<NotificationEventArgs> notifications = new();
-		DwgReaderConfiguration configuration = new DwgReaderConfiguration { Failsafe = false };
+		base.ReadTest(test);
 
-		CadDocument doc = DwgReader.Read(test.Path, configuration, (sender, e) =>
+		List<NotificationEventArgs> notifications = new();
+		CadDocument doc = DwgReader.Read(test.Path, this._dwgConfiguration, (sender, e) =>
 		{
 			this._output.WriteLine($"[{e.NotificationType}] {e.Message}");
 			notifications.Add(e);
 		});
 
-		ACadVersion expected = Path.GetFileName(test.Folder) == "AC1006" ? ACadVersion.AC1006 : ACadVersion.AC1009;
-		Assert.Equal(expected, doc.Header.Version);
+		Assert.Equal(this.getVersion(test), doc.Header.Version);
 
-		//The reader reports the entities whose fields do not match their size
-		Assert.Empty(notifications);
-	}
-
-	[Theory]
-	[MemberData(nameof(PreR13Files))]
-	public void ReadHeader(FileModel test)
-	{
-		using DwgReader reader = new DwgReader(test.Path);
-
-		CadHeader header = reader.ReadHeader();
-
-		Assert.NotNull(header);
-		Assert.Equal(1.0, header.LineTypeScale);
-		Assert.Null(reader.ReadPreview());
-		Assert.NotNull(reader.ReadSummaryInfo());
+		if (test.FileName == "line_linetype_eed.dwg")
+		{
+			//The drawing has the text style STANDARD twice
+			Assert.Equal("Repeated entry STANDARD in the table STYLE", Assert.Single(notifications).Message);
+		}
+		else
+		{
+			Assert.Empty(notifications);
+		}
 	}
 
 	[Fact]
@@ -114,10 +172,10 @@ public class DwgPreR13ReaderTests
 	[Fact]
 	public void CodePage()
 	{
-		Assert.Equal("ANSI_1250", this.read("AC1009", "line_2d_handle.dwg").Header.CodePage);
-		Assert.Equal("ANSI_1252", this.read("AC1009", "line_linetype_eed.dwg").Header.CodePage);
+		Assert.Equal("ANSI_1250", this.read("AC1009", "line_2d_handle.dwg").Header.CodePage, ignoreCase: true);
+		Assert.Equal("ANSI_1252", this.read("AC1009", "line_linetype_eed.dwg").Header.CodePage, ignoreCase: true);
 		//R10 does not store a code page
-		Assert.Equal("DOS437", this.read("AC1006", "line.dwg").Header.CodePage);
+		Assert.Equal("DOS437", this.read("AC1006", "line.dwg").Header.CodePage, ignoreCase: true);
 	}
 
 	[Fact]
@@ -252,8 +310,9 @@ public class DwgPreR13ReaderTests
 		Assert.Equal(152.105353, line.StartPoint.X, 6);
 		Assert.Equal(121.454185, line.StartPoint.Y, 6);
 
-		//The paper viewport of the drawing replaces the one of the document
-		Assert.Single(doc.PaperSpace.Entities.OfType<Viewport>());
+		//The paper viewport of the drawing is used by the layout
+		Viewport viewport = Assert.Single(doc.PaperSpace.Entities.OfType<Viewport>());
+		Assert.Equal(viewport, doc.PaperSpace.Layout.PaperViewport);
 		Assert.False(doc.Header.ShowModelSpace);
 	}
 
@@ -330,13 +389,14 @@ public class DwgPreR13ReaderTests
 		Assert.NotEmpty(notifications);
 	}
 
+	private ACadVersion getVersion(FileModel test)
+	{
+		return Path.GetFileName(test.Folder) == "AC1006" ? ACadVersion.AC1006 : ACadVersion.AC1009;
+	}
+
 	private CadDocument read(string version, string file)
 	{
-		DwgReaderConfiguration configuration = new DwgReaderConfiguration { Failsafe = false };
-		return DwgReader.Read(Path.Combine(samplesFolder, version, file), configuration, (sender, e) =>
-		{
-			this._output.WriteLine($"[{e.NotificationType}] {e.Message}");
-		});
+		return DwgReader.Read(Path.Combine(samplesFolder, version, file), this._dwgConfiguration, this.onNotification);
 	}
 
 	private IEnumerable<Entity> readModelEntities(string version, string file)

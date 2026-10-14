@@ -11,7 +11,6 @@ using ACadSharp.Exceptions;
 using ACadSharp.IO.DWG;
 using ACadSharp.IO.DWG.DwgStreamReaders;
 using ACadSharp.IO.DWG.FileHeaders;
-using ACadSharp.IO.DWG.PreR13;
 
 namespace ACadSharp.IO;
 
@@ -103,11 +102,6 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <inheritdoc/>
 	public override CadDocument Read()
 	{
-		if (this.tryCreatePreR13Reader(out DwgPreR13Reader preR13Reader))
-		{
-			return preR13Reader.Read();
-		}
-
 		//Read the file header
 		this._fileHeader = this.readFileHeader();
 
@@ -123,12 +117,20 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		this._document.Header = this.ReadHeader();
 		this._document.Header.Document = this._document;
 
-		this.readTemplate();
-		this.readClasses();
-		this.readAppInfo();
-		this.readDsPrototype_1b();
-		this.readObjects();
-		this.readAuxHeader();
+		if (this._fileHeader.AcadVersion < ACadVersion.AC1012)
+		{
+			//The drawings older than R13 have no sections, the tables and entities follow the header variables
+			this.readObjectsAC09();
+		}
+		else
+		{
+			this.readTemplate();
+			this.readClasses();
+			this.readAppInfo();
+			this.readDsPrototype_1b();
+			this.readObjects();
+			this.readAuxHeader();
+		}
 
 		this._builder.BuildDocument();
 		this._builder.BuildDataStorage();
@@ -143,22 +145,28 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <returns></returns>
 	public override CadHeader ReadHeader()
 	{
-		if (this.tryCreatePreR13Reader(out DwgPreR13Reader preR13Reader))
-		{
-			return preR13Reader.ReadHeader();
-		}
-
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
 		CadHeader header = new CadHeader();
 		header.CodePage = CadUtils.GetCodePageName(this._fileHeader.DrawingCodePage);
 
-		IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.Header);
+		DwgHeaderHandlesCollection headerHandles;
+		if (this._fileHeader is DwgFileHeaderAC09 fileHeaderAC09)
+		{
+			DwgHeaderReaderAC09 hReader = new DwgHeaderReaderAC09(this._fileHeader.AcadVersion, this.getStreamReaderAC09(), fileHeaderAC09, header);
+			hReader.OnNotification += onNotificationEvent;
 
-		DwgHeaderReader hReader = new DwgHeaderReader(this._fileHeader.AcadVersion, sreader, header);
-		hReader.OnNotification += onNotificationEvent;
+			hReader.Read(out headerHandles);
+		}
+		else
+		{
+			IDwgStreamReader sreader = this.getSectionStream(DwgSectionDefinition.Header);
 
-		hReader.Read(this._fileHeader.AcadMaintenanceVersion, out DwgHeaderHandlesCollection headerHandles);
+			DwgHeaderReader hReader = new DwgHeaderReader(this._fileHeader.AcadVersion, sreader, header);
+			hReader.OnNotification += onNotificationEvent;
+
+			hReader.Read(this._fileHeader.AcadMaintenanceVersion, out headerHandles);
+		}
 
 		if (this._builder != null)
 			this._builder.HeaderHandles = headerHandles;
@@ -175,12 +183,6 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <returns></returns>
 	public DwgPreview ReadPreview()
 	{
-		//The drawings older than R13 have no preview
-		if (this.isPreR13())
-		{
-			return null;
-		}
-
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
 		//Check if the preview exist
@@ -207,11 +209,6 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 	/// <returns></returns>
 	public CadSummaryInfo ReadSummaryInfo()
 	{
-		if (this.isPreR13())
-		{
-			return new CadSummaryInfo();
-		}
-
 		this._fileHeader = this._fileHeader ?? this.readFileHeader();
 
 		//Older versions than 2004 don't have summary info in it's file
@@ -226,43 +223,6 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 
 		DwgSummaryInfoReader summaryReader = new DwgSummaryInfoReader(this._fileHeader.AcadVersion, reader);
 		return summaryReader.Read();
-	}
-
-	private bool isPreR13()
-	{
-		if (this._fileHeader != null)
-		{
-			return false;
-		}
-
-		this._fileStream.Position = 0L;
-		ACadVersion version = CadUtils.GetVersionFromName(this._fileStream.ReadString(6, Encoding.ASCII));
-		return DwgPreR13Reader.IsSupported(version);
-	}
-
-	/// <summary>
-	/// Creates the reader for the drawings older than R13, they have their own layout.
-	/// </summary>
-	private bool tryCreatePreR13Reader(out DwgPreR13Reader reader)
-	{
-		reader = null;
-
-		if (!this.isPreR13())
-		{
-			return false;
-		}
-
-		this._fileStream.Position = 0L;
-		ACadVersion version = CadUtils.GetVersionFromName(this._fileStream.ReadString(6, Encoding.ASCII));
-
-		this._fileStream.Position = 0L;
-		using (MemoryStream memory = new MemoryStream())
-		{
-			this._fileStream.Stream.CopyTo(memory);
-			reader = new DwgPreR13Reader(memory.ToArray(), version, this.Configuration, this.onNotificationEvent);
-		}
-
-		return true;
 	}
 
 	/// <summary>
@@ -294,9 +254,11 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 			case ACadVersion.AC1002:
 			case ACadVersion.AC1003:
 			case ACadVersion.AC1004:
+				throw new CadNotSupportedException(this._fileHeader.AcadVersion);
 			case ACadVersion.AC1006:
 			case ACadVersion.AC1009:
-				throw new CadNotSupportedException(this._fileHeader.AcadVersion);
+				this.readFileHeaderAC09(fileHeader as DwgFileHeaderAC09, sreader);
+				break;
 			case ACadVersion.AC1012:
 			case ACadVersion.AC1014:
 			case ACadVersion.AC1015:
@@ -663,6 +625,81 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		var obs = new DwgPrototype1bReader_obsolete(this._fileHeader.AcadVersion, this._builder, sreader);
 		obs.OnNotification += onNotificationEvent;
 		this._document.DataStorage = obs.Read();
+	}
+
+	/// <summary>
+	/// Read the file header of the drawings older than R13, R10 (AC1006) and R11/R12 (AC1009).
+	/// </summary>
+	/// <param name="fileheader">File header to read</param>
+	/// <param name="sreader"></param>
+	private void readFileHeaderAC09(DwgFileHeaderAC09 fileheader, IDwgStreamReader sreader)
+	{
+		//The version string is followed by 0 bytes up to 0x0C
+		sreader.Position = 0x0C;
+
+		//0x0C	1	Unknown
+		sreader.ReadByte();
+		//0x0D	2	Number of entity sections
+		sreader.ReadShort();
+		//0x0F	2	Number of sections
+		sreader.ReadShort();
+		//0x11	2	Number of header variables
+		fileheader.HeaderVariablesCount = sreader.ReadShort();
+		//0x13	1	Unknown
+		sreader.ReadByte();
+
+		//0x14	4	Entities start
+		//0x18	4	Entities end
+		int entitiesStart = sreader.ReadInt();
+		int entitiesEnd = sreader.ReadInt();
+		fileheader.EntitiesSection = new DwgSectionLocatorRecord(null, entitiesStart, entitiesEnd - entitiesStart);
+
+		//0x1C	4	Blocks start
+		//0x20	4	Blocks size, the highest byte is a flag (0x40)
+		int blocksStart = sreader.ReadInt();
+		int blocksSize = sreader.ReadInt() & 0x00FFFFFF;
+		fileheader.BlocksSection = new DwgSectionLocatorRecord(null, blocksStart, blocksSize);
+
+		//0x24	4	Extra entities start
+		//0x28	4	Extra entities size, the highest byte is a flag (0x80)
+		int extrasStart = sreader.ReadInt();
+		int extrasSize = sreader.ReadInt() & 0x00FFFFFF;
+		fileheader.ExtrasSection = new DwgSectionLocatorRecord(null, extrasStart, extrasSize);
+
+		//0x2C	Tables: item size (RS) | count (RS) | unknown (RS) | start (RL)
+		//The UCS, VPORT, APPID and DIMSTYLE tables are stored with the header variables
+		foreach (string name in new string[] {
+			DxfFileToken.TableBlockRecord,
+			DxfFileToken.TableLayer,
+			DxfFileToken.TableStyle,
+			DxfFileToken.TableLinetype,
+			DxfFileToken.TableView })
+		{
+			DwgFileHeaderAC09.TableDescriptor table = new DwgFileHeaderAC09.TableDescriptor();
+			table.ItemSize = (ushort)sreader.ReadShort();
+			table.Count = (ushort)sreader.ReadShort();
+			sreader.ReadShort();
+			table.Seeker = sreader.ReadInt();
+
+			fileheader.Tables[name] = table;
+		}
+
+		//0x5E	Header variables
+		fileheader.HeaderVariablesSeeker = sreader.Position;
+
+		//0x3F9	2	Code page, 0 for the drawings that don't store it
+		sreader.Position = 0x3F9;
+		short codePage = sreader.ReadShort();
+		if (codePage > 0 && CadUtils.GetCodePage(codePage) != CodePage.Unknown)
+		{
+			fileheader.DrawingCodePage = CadUtils.GetCodePage(codePage);
+		}
+		else
+		{
+			fileheader.DrawingCodePage = fileheader.AcadVersion == ACadVersion.AC1006 ? CodePage.Ibm437 : CodePage.Windows1252;
+		}
+
+		this._encoding = getListedEncoding((int)fileheader.DrawingCodePage);
 	}
 
 	/// <summary>
@@ -1229,6 +1266,29 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		handleReader.OnNotification += onNotificationEvent;
 
 		return handleReader.Read();
+	}
+
+	/// <summary>
+	/// Read the tables, blocks and entities of the drawings older than R13.
+	/// </summary>
+	private void readObjectsAC09()
+	{
+		DwgObjectReaderAC09 sectionReader = new DwgObjectReaderAC09(
+			this._fileHeader.AcadVersion,
+			this._builder,
+			this.getStreamReaderAC09(),
+			this._fileHeader as DwgFileHeaderAC09);
+		sectionReader.OnNotification += this.onNotificationEvent;
+
+		sectionReader.Read();
+	}
+
+	/// <summary>
+	/// The drawings older than R13 have no sections, the data is read directly from the file.
+	/// </summary>
+	private DwgStreamReaderAC09 getStreamReaderAC09()
+	{
+		return (DwgStreamReaderAC09)DwgStreamReaderBase.GetStreamHandler(this._fileHeader.AcadVersion, this._fileStream.Stream, this._encoding);
 	}
 
 	/// <summary>
