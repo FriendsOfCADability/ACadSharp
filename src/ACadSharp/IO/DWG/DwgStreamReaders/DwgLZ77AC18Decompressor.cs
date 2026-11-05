@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ACadSharp.Exceptions;
+using System;
 using System.IO;
 
 namespace ACadSharp.IO.DWG;
@@ -21,7 +22,7 @@ internal static class DwgLZ77AC18Decompressor
 	public static void DecompressToDest(Stream src, Stream dst)
 	{
 		var tempBuf = new byte[128];
-		int opcode1 = (byte)src.ReadByte();
+		int opcode1 = readByte(src);
 
 		if (opcode1 > 0x11)
 		{
@@ -47,7 +48,7 @@ internal static class DwgLZ77AC18Decompressor
 			{
 				compressedBytes = (opcode1 >> 4) - 1;
 				//Read the next byte(call it opcode2):
-				byte opcode2 = (byte)src.ReadByte();
+				byte opcode2 = readByte(src);
 				compOffset = ((opcode1 >> 2 & 3) | (opcode2 << 2)) + 1;
 			}
 			//0x12 – 0x1F
@@ -65,6 +66,11 @@ internal static class DwgLZ77AC18Decompressor
 			}
 
 			long position = dst.Position;
+			// a back reference must point into the data decompressed so far; with an offset of 0 the copy below never ended
+			if (compOffset <= 0 || compOffset > position)
+			{
+				throw new DwgException($"Invalid back reference in compressed data: offset {compOffset} at {position}");
+			}
 			if (tempBuf.Length < compressedBytes)
 			{
 				tempBuf = new byte[compressedBytes];
@@ -83,7 +89,7 @@ internal static class DwgLZ77AC18Decompressor
 			//0x00 : litCount is read as the next Literal Length (see format below)
 			if (litCount == 0)
 			{
-				opcode1 = (byte)src.ReadByte();
+				opcode1 = readByte(src);
 				if ((opcode1 & 0b11110000) == 0)
 				{
 					litCount = literalCount(opcode1, src) + 3;
@@ -105,10 +111,33 @@ internal static class DwgLZ77AC18Decompressor
 			tempBuf = new byte[count];
 		}
 
-		_ = src.Read(tempBuf, 0, count);
+		int read = 0;
+		while (read < count)
+		{
+			int n = src.Read(tempBuf, read, count - read);
+			if (n <= 0)
+			{
+				throw new DwgException("Unexpected end of compressed data");
+			}
+			read += n;
+		}
 		dst.Write(tempBuf, 0, count);
 
-		return (byte)src.ReadByte();
+		return readByte(src);
+	}
+
+	/// <summary>
+	/// The next byte of the compressed data. The end of the stream used to be read as 0xFF and decoded on, which could
+	/// produce a back reference with offset 0, an endless loop.
+	/// </summary>
+	private static byte readByte(Stream src)
+	{
+		int b = src.ReadByte();
+		if (b < 0)
+		{
+			throw new DwgException("Unexpected end of compressed data");
+		}
+		return (byte)b;
 	}
 
 	private static int literalCount(int code, Stream src)
@@ -118,7 +147,7 @@ internal static class DwgLZ77AC18Decompressor
 		if (lowbits == 0)
 		{
 			byte lastByte;
-			for (lastByte = (byte)src.ReadByte(); lastByte == 0; lastByte = (byte)src.ReadByte())
+			for (lastByte = readByte(src); lastByte == 0; lastByte = readByte(src))
 			{
 				lowbits += byte.MaxValue;  //0xFF
 			}
@@ -136,7 +165,7 @@ internal static class DwgLZ77AC18Decompressor
 		{
 			byte lastByte;
 
-			for (lastByte = (byte)compressed.ReadByte(); lastByte == 0; lastByte = (byte)compressed.ReadByte())
+			for (lastByte = readByte(compressed); lastByte == 0; lastByte = readByte(compressed))
 			{
 				compressedBytes += byte.MaxValue;
 			}
@@ -149,10 +178,10 @@ internal static class DwgLZ77AC18Decompressor
 
 	private static int twoByteOffset(ref int offset, int addedValue, Stream stream)
 	{
-		int firstByte = stream.ReadByte();
+		int firstByte = readByte(stream);
 
 		offset |= firstByte >> 2;
-		offset |= stream.ReadByte() << 6;
+		offset |= readByte(stream) << 6;
 		offset += addedValue;
 
 		return firstByte;

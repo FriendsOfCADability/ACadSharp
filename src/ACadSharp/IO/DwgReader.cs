@@ -344,6 +344,31 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		return decompressedData;
 	}
 
+	/// <summary>
+	/// The largest page size of a section of an R2004+ file that is accepted, normally a page has 0x7400 bytes.
+	/// </summary>
+	private const ulong maxPageSize = 0x100000;
+
+	/// <summary>
+	/// The largest number of empty pages of a section, which are not stored in the file.
+	/// </summary>
+	private const int maxEmptyPages = 1 << 20;
+
+	/// <summary>
+	/// The largest decompressed size of a page or section that is accepted: 256 times the file length, at least 64 MB.
+	/// The sizes, offsets and counts of the section maps come from the file; a corrupt or crafted file made the reader
+	/// spin for ever or allocate gigabytes.
+	/// </summary>
+	private long maxDecompressedSize => Math.Max(256L * this._fileStream.Stream.Length, 1L << 26);
+
+	private void checkDecompressedSize(long size, string what)
+	{
+		if (size < 0 || size > this.maxDecompressedSize)
+		{
+			throw new DwgException($"Invalid {what}: {size} bytes");
+		}
+	}
+
 	private void getPageHeaderData(IDwgStreamReader sreader,
 			out long sectionType,
 			out long decompressedSize,
@@ -444,6 +469,7 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		foreach (DwgLocalSectionMap page in section.LocalSections)
 			totalLength += page.DecompressedSize;
 
+		this.checkDecompressedSize((long)Math.Min(totalLength, (ulong)long.MaxValue), "size of a section");
 		MemoryStream memoryStream = HugeMemoryStream.Create((long)totalLength);
 
 		foreach (DwgLocalSectionMap page in section.LocalSections)
@@ -834,6 +860,7 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 
 		//Get the page size
 		this.getPageHeaderData(sreader, out _, out long decompressedSize, out _, out _, out _);
+		this.checkDecompressedSize(decompressedSize, "size of the section page map");
 		//Get the descompressed stream to read the records
 		StreamIO decompressed = new StreamIO(DwgLZ77AC18Decompressor.Decompress(sreader.Stream, decompressedSize));
 
@@ -878,6 +905,7 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 		sreader.Position = fileheader.Records[(int)fileheader.SectionMapId].Seeker;
 		//Get the page size
 		this.getPageHeaderData(sreader, out _, out decompressedSize, out _, out _, out _);
+		this.checkDecompressedSize(decompressedSize, "size of the section map");
 		StreamIO decompressedStream = new StreamIO(DwgLZ77AC18Decompressor.Decompress(sreader.Stream, decompressedSize));
 		decompressedStream.Encoding = TextEncoding.GetListedEncoding(CodePage.Windows1252);
 
@@ -909,6 +937,11 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 			descriptor.PageCount = decompressedStream.ReadInt<LittleEndianConverter>();
 			//0x0C	4	Max Decompressed Size of a section page of this type(normally 0x7400)
 			descriptor.DecompressedSize = (ulong)decompressedStream.ReadInt<LittleEndianConverter>();
+			if (descriptor.DecompressedSize == 0 || descriptor.DecompressedSize > maxPageSize)
+			{
+				throw new DwgException($"Invalid page size of a section: {descriptor.DecompressedSize}");
+			}
+			this.checkDecompressedSize((long)Math.Min(descriptor.CompressedSize, (ulong)long.MaxValue), "size of a section");
 			//0x10	4	Unknown(long)
 			decompressedStream.ReadInt<LittleEndianConverter>();
 			//0x14	4	Compressed(1 = no, 2 = yes, normally 2)
@@ -920,8 +953,15 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 			//0x20	64	Section Name(string)
 			descriptor.Name = decompressedStream.ReadString(64).Split('\0')[0];
 
+			// each page takes 16 bytes of the section map
+			if (descriptor.PageCount < 0 || 16L * descriptor.PageCount > decompressedStream.Length - decompressedStream.Position)
+			{
+				throw new DwgException($"Invalid page count of a section: {descriptor.PageCount}");
+			}
+
 			//Following this, the following (local) section page map data will be present
 			ulong decompressSizeCounter = 0;
+			int emptyPages = 0;
 			for (int j = 0; j < descriptor.PageCount; ++j)
 			{
 				DwgLocalSectionMap localmap = new DwgLocalSectionMap();
@@ -931,10 +971,18 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 				localmap.CompressedSize = (ulong)decompressedStream.ReadInt<LittleEndianConverter>();
 				//0x08	8	Start offset for this page(OdUInt64).If this start offset is smaller than the sum of the decompressed size of all previous pages, then this page is to be preceded by zero pages until this condition is met.
 				localmap.Offset = decompressedStream.ReadULong();
+				if (localmap.Offset > (ulong)this.maxDecompressedSize)
+				{
+					throw new DwgException($"Invalid offset of a section page: {localmap.Offset}");
+				}
 
 				// Insert empty pages to fill gaps in the offset
 				while (decompressSizeCounter < localmap.Offset)
 				{
+					if (++emptyPages > maxEmptyPages)
+					{
+						throw new DwgException("Too many empty pages in a section");
+					}
 					descriptor.LocalSections.Add(new DwgLocalSectionMap
 					{
 						IsEmpty = true,
@@ -954,6 +1002,7 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 
 				descriptor.LocalSections.Add(localmap);
 				decompressSizeCounter += localmap.DecompressedSize;
+				this.checkDecompressedSize((long)decompressSizeCounter, "size of a section");
 			}
 
 			//Get the final size for the local section
@@ -1142,7 +1191,13 @@ public class DwgReader : CadReaderBase<DwgReaderConfiguration>
 			//			smaller than the sum of the decompressed size of all previous
 			//			pages, then it is to be preceded by a zero page with a size
 			//			that is equal to the difference between these two numbers.
-			section.PageCount = (int)sectionMapStream.ReadULong<LittleEndianConverter>();
+			ulong pageCount = sectionMapStream.ReadULong<LittleEndianConverter>();
+			// each page takes 56 bytes of the section map
+			if (pageCount > (ulong)Math.Max(0, sectionMapStream.Length - sectionMapStream.Position) / 56)
+			{
+				throw new DwgException($"Invalid page count of a section: {pageCount}");
+			}
+			section.PageCount = (int)pageCount;
 
 			//Read the name
 			if (sectionNameLength > 0)

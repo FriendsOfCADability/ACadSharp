@@ -18,6 +18,11 @@ namespace ACadSharp.IO
 
 		public static MemoryStream Create(long length)
 		{
+			if (length < 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(length), length, "The length of a stream cannot be negative");
+			}
+
 			if (length <= int.MaxValue)
 			{
 				byte[] buf = new byte[(int)length];
