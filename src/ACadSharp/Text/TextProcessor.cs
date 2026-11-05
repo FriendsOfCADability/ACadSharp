@@ -21,6 +21,7 @@ namespace ACadSharp.Text
 			bool openGroup = false;
 			while (index < text.Length)
 			{
+				int start = index;
 				char? prev = text.TryGet(index - 1);
 				char? current = text.TryGet(index);
 				char? next = text.TryGet(index + 1);
@@ -78,6 +79,12 @@ namespace ACadSharp.Text
 					sb.Append(current);
 					index++;
 				}
+
+				// every step must advance, a format code without its terminating ';' must not restart the loop
+				if (index <= start)
+				{
+					index = start + 1;
+				}
 			}
 
 			return sb.ToString();
@@ -97,79 +104,97 @@ namespace ACadSharp.Text
 			bool openGroup = false;
 			while (index < text.Length)
 			{
-				int currIndex = text.IndexOf(@"\", index);
-				if (currIndex <= 0)
+				int codeIndex = text.IndexOf('\\', index);
+				if (codeIndex < 0 || codeIndex == text.Length - 1)
 				{
-					string s = text.Substring(index, text.Length - index);
-					if (openGroup && s.Contains("}"))
-					{
-						s = s.Replace("}", string.Empty);
-						openGroup = false;
-					}
-					sb.Append(s);
+					// no more escape sequences, a backslash at the very end is plain text
+					appendText(sb, text.Substring(index), ref openGroup);
 					break;
 				}
 
-				char prev = text[currIndex - 1];
-				char current = text[currIndex];
-				char next = text[currIndex + 1];
-
-				if (prev == '{')
+				int textEnd = codeIndex;
+				bool groupStart = codeIndex > index && text[codeIndex - 1] == '{';
+				if (groupStart)
 				{
-					currIndex--;
+					textEnd--;
+				}
+
+				if (textEnd > index)
+				{
+					appendText(sb, text.Substring(index, textEnd - index), ref openGroup);
+				}
+
+				if (groupStart)
+				{
 					openGroup = true;
 				}
 
-				if (currIndex > index)
-				{
-					string s = text.Substring(index, currIndex - index);
-					if (openGroup && s.Contains("}"))
-					{
-						s = s.Replace("}", string.Empty);
-						openGroup = false;
-					}
-					sb.Append(s);
-				}
-
-				int f;
+				char next = text[codeIndex + 1];
+				int end;
 				switch (next)
 				{
 					case 'f':
 					case 'F':
-						processFont(text, currIndex, out f);
-						currIndex = f;
+						processFont(text, codeIndex, out end);
 						break;
 					case 'c':
 					case 'C':
-						processColor(text, currIndex, out f);
-						currIndex = f;
+						processColor(text, codeIndex, out end);
 						break;
 					case 'P':
 					case 'n':
 						sb.Append(Environment.NewLine);
-						currIndex += 2;
-						break;
-					case 'r':
+						end = codeIndex + 2;
 						break;
 					case '}':
 					case '{':
 					case '\\':
 						sb.Append(next);
+						end = codeIndex + 2;
+						break;
+					case 'r':
+						end = codeIndex + 2;
+						break;
+					default:
+						// not a code this method removes, e.g. a backslash in a path: kept as it is
+						sb.Append('\\').Append(next);
+						end = codeIndex + 2;
 						break;
 				}
 
-				index = currIndex;
+				// every step must advance
+				index = Math.Max(end, codeIndex + 2);
 			}
 
 			return sb.ToString();
+		}
+
+		private static void appendText(StringBuilder sb, string s, ref bool openGroup)
+		{
+			if (openGroup && s.Contains("}"))
+			{
+				s = s.Replace("}", string.Empty);
+				openGroup = false;
+			}
+
+			sb.Append(s);
+		}
+
+		/// <summary>
+		/// The position after the ';' that terminates the format code at <paramref name="start"/>, the end of the text when
+		/// the ';' is missing.
+		/// </summary>
+		private static int formatCodeEnd(string text, int start)
+		{
+			int end = text.IndexOf(';', start);
+			return end < 0 ? text.Length : end + 1;
 		}
 
 		private static void processFont(string text, int start, out int end)
 		{
 			//Example:
 			//- Font: {\\fCalibri|b0|i0|c0|p34;Calibri\\Fcdm|c0; CDM \\fConsolas|b0|i0|c0|p49;Consolas\\P}
-			end = text.IndexOf(';', start);
-			end += 1;
+			end = formatCodeEnd(text, start);
 			var data = text.Substring(start, end - start).Split('|');
 
 			FontData fontData = new FontData
@@ -182,32 +207,28 @@ namespace ACadSharp.Text
 		{
 			//Example:
 			//\\(unknown escape code)(escape text);
-			end = text.IndexOf(';', start);
-			end += 1;
+			end = formatCodeEnd(text, start);
 		}
 
 		private static void processColor(string text, int start, out int end)
 		{
 			//Example:
 			//- Color text {\\C3;green}, {\\C5;blue}, {\\C1;red}, ByLayer, {\\C0;ByBlock}, {\\C21;\\c5872631;TrueColor}
-			end = text.IndexOf(';', start);
-			end += 1;
+			end = formatCodeEnd(text, start);
 		}
 
 		private static void processHeight(string text, int start, out int end)
 		{
 			//Example:
 			//- {\\H2x;Double height \\H0.875x;height is: 0.35\\H1.14286x;\\P}
-			end = text.IndexOf(';', start);
-			end += 1;
+			end = formatCodeEnd(text, start);
 		}
 
 		private static void processJustification(string text, int start, out int end)
 		{
 			//Example:
 			//\\pxqc;Text in the center\\P\\pq*;Hello this is an mText\\P
-			end = text.IndexOf(';', start);
-			end += 1;
+			end = formatCodeEnd(text, start);
 		}
 	}
 
