@@ -1,4 +1,5 @@
 ﻿using ACadSharp.Entities;
+using ACadSharp.Exceptions;
 using ACadSharp.IO.Templates;
 using ACadSharp.Objects;
 using ACadSharp.Tables;
@@ -1283,12 +1284,22 @@ internal abstract class DxfSectionReaderBase
 				return true;
 			case 93:
 				int size = this._reader.ValueAsInt;
+				if (size < 0)
+				{
+					throw new DxfException("Invalid MESH face list size", this._reader.Position);
+				}
 				this._reader.ReadNext();
 
 				int indexes = 0;
 				for (int i = 0; i < size; i += indexes + 1)
 				{
 					indexes = this._reader.ValueAsInt;
+					// a face takes indexes + 1 entries of the face list: its count can never exceed what is left of the list. The
+					// count comes from the file, and an unchecked value was used as array size (2e9 allocated 8 GB).
+					if (indexes < 0 || indexes > size - i - 1)
+					{
+						throw new DxfException("Invalid MESH face size", this._reader.Position);
+					}
 					this._reader.ReadNext();
 
 					int[] face = new int[indexes];
