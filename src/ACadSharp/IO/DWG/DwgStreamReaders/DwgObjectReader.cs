@@ -1873,7 +1873,19 @@ namespace ACadSharp.IO.DWG
 			//Extrusion 3BD 210
 			ellipse.Normal = this._objectReader.Read3BitDouble();
 			//Axis ratio BD 40 Minor/major axis ratio
-			ellipse.RadiusRatio = this._objectReader.ReadBitDouble();
+			double ratio = this._objectReader.ReadBitDouble();
+			if (ratio <= 0)
+			{
+				ellipse.RadiusRatio = MathHelper.Epsilon;
+			}
+			else if (ratio > 1)
+			{
+				ellipse.RadiusRatio = 1;
+			}
+			else
+			{
+				ellipse.RadiusRatio = ratio;
+			}
 			//Beg angle BD 41 Starting angle (eccentric anomaly, radians)
 			ellipse.StartParameter = this._objectReader.ReadBitDouble();
 			//End angle BD 42 Ending angle (eccentric anomaly, radians)
@@ -5643,7 +5655,7 @@ namespace ACadSharp.IO.DWG
 
 				//… The cell style fields, see paragraph 20.4.101.4.
 				//Index starting by 1
-				int unknown = this._mergedReaders.ReadBitLong();
+				int index = this._mergedReaders.ReadBitLong();
 				this.readCellStyle(cellStyleTemplate);
 
 				//BL - Cell style ID, 1 = title, 2 = header, 3 = data, 4 = table (new in R24).
@@ -6394,7 +6406,7 @@ namespace ACadSharp.IO.DWG
 				//H 332 Background(soft pointer)
 				long backgroundHandle = (long)this.handleReference();
 				//H 348 Visual Style(hard pointer)
-				long visualStyleHandle = (long)this.handleReference();
+				template.VisualStyleHandle = this.handleReference();
 				//H 333 Shadeplot ID(soft pointer)
 				long shadePlotIdHandle = (long)this.handleReference();
 				//H 361 Sun(hard owner)
